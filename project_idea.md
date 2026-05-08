@@ -33,7 +33,7 @@ Client SDK
     │         ▼ (writes to TimescaleDB + Redis)
     │
     └──▶ [Raw Storage Service]  ←── dumps to ClickHouse/Parquet for ad-hoc queries
-    
+
 [Query API Service]  ←── serves dashboard queries from TimescaleDB/ClickHouse
     │
     ▼
@@ -50,6 +50,7 @@ Client SDK
 ---
 
 #### 1. `ingest-service`
+
 **Job:** Receive events as fast as possible and push to Kafka. That's it.
 
 ```
@@ -76,6 +77,7 @@ Key concepts: **back-pressure**, **fire-and-forget**, **idempotency keys** (dedu
 ---
 
 #### 2. `validation-service`
+
 **Job:** Kafka consumer on `raw-events`. Validates full schema, filters bots, enforces project-level event schemas.
 
 - Consumes `raw-events`
@@ -89,9 +91,11 @@ Key concepts: **consumer groups**, **dead letter queues**, **schema registry**
 ---
 
 #### 3. `enrichment-service`
+
 **Job:** Kafka consumer on `validated-events`. Adds context that the client didn't send.
 
 Enrichments:
+
 - **Geo:** IP → country, city, region (MaxMind GeoLite2, local lookup, no external API call)
 - **Device/OS:** User-Agent parsing → browser, OS, device type
 - **Session:** Stitch events into sessions (30-min inactivity = new session) using Redis
@@ -104,9 +108,11 @@ Key concepts: **stateful stream processing** (session stitching in Redis), **ide
 ---
 
 #### 4. `stream-processor-service`
+
 **Job:** The brain. Consumes `enriched-events` and maintains real-time aggregates.
 
 Aggregates it maintains:
+
 ```
 - Event counts (per event, per project, per time bucket: 1min / 1hr / 1day)
 - Unique users (HyperLogLog in Redis for approximation at scale)
@@ -116,6 +122,7 @@ Aggregates it maintains:
 ```
 
 Storage:
+
 - **Redis** → live counters, current active users, rolling 24h windows
 - **TimescaleDB** → time-series aggregates for historical queries
 
@@ -124,17 +131,19 @@ Key concepts: **tumbling vs sliding windows**, **HyperLogLog**, **funnel analysi
 ---
 
 #### 5. `raw-storage-service`
+
 **Job:** Dumb consumer. Takes `enriched-events` and writes them raw for ad-hoc SQL queries.
 
 - Batches events (1000 events or 5s, whichever first)
 - Writes to **ClickHouse** (columnar, absurdly fast for analytics queries)
-- Enables queries like: *"Show me all users who did X then Y then purchased within 1 hour"*
+- Enables queries like: _"Show me all users who did X then Y then purchased within 1 hour"_
 
 Key concepts: **micro-batching**, **columnar storage**, **OLAP vs OLTP**
 
 ---
 
 #### 6. `query-api-service`
+
 **Job:** REST API that the dashboard calls to fetch metrics.
 
 ```
@@ -153,6 +162,7 @@ Key concepts: **CQRS** (this service is pure read side), **query planning**, **c
 ---
 
 #### 7. `websocket-service`
+
 **Job:** Push live updates to connected dashboards without polling.
 
 - Clients connect via WebSocket with their `projectId`
@@ -175,6 +185,7 @@ Key concepts: **Redis Pub/Sub**, **WebSocket scaling** (sticky sessions or Redis
 ---
 
 #### 8. `project-service`
+
 **Job:** CRUD for projects, API keys, event schema definitions, team members.
 
 - Issues API keys (hashed, stored in DB)
@@ -184,21 +195,22 @@ Key concepts: **Redis Pub/Sub**, **WebSocket scaling** (sticky sessions or Redis
 ---
 
 #### 9. `auth-service`
+
 Standard JWT auth for dashboard users. Separate from API key auth (which lives in the gateway).
 
 ---
 
 ### Data Stores Per Service
 
-| Service | Database | Why |
-|---|---|---|
-| ingest | None (stateless) | — |
-| validation | Redis (schema cache) | Fast lookup, invalidated on schema change |
-| enrichment | Redis (sessions) | TTL-based session windows |
-| stream-processor | Redis + TimescaleDB | Live counters + time-series |
-| raw-storage | ClickHouse | Columnar OLAP |
-| query-api | TimescaleDB + ClickHouse | Reads only |
-| project/auth | PostgreSQL | Relational, transactional |
+| Service          | Database                 | Why                                       |
+| ---------------- | ------------------------ | ----------------------------------------- |
+| ingest           | None (stateless)         | —                                         |
+| validation       | Redis (schema cache)     | Fast lookup, invalidated on schema change |
+| enrichment       | Redis (sessions)         | TTL-based session windows                 |
+| stream-processor | Redis + TimescaleDB      | Live counters + time-series               |
+| raw-storage      | ClickHouse               | Columnar OLAP                             |
+| query-api        | TimescaleDB + ClickHouse | Reads only                                |
+| project/auth     | PostgreSQL               | Relational, transactional                 |
 
 ---
 
@@ -218,19 +230,19 @@ metric-updates          ← stream-processor → Redis Pub/Sub bridge
 
 ```typescript
 // What your users embed
-import { Analytics } from '@yourplatform/sdk'
+import { Analytics } from "@yourplatform/sdk";
 
-const analytics = new Analytics({ apiKey: 'pk_live_abc123' })
+const analytics = new Analytics({ apiKey: "pk_live_abc123" });
 
-analytics.track('page_view', {
+analytics.track("page_view", {
   url: window.location.href,
-  referrer: document.referrer
-})
+  referrer: document.referrer,
+});
 
-analytics.identify('usr_123', {
-  email: 'seif@example.com',
-  plan: 'pro'
-})
+analytics.identify("usr_123", {
+  email: "seif@example.com",
+  plan: "pro",
+});
 ```
 
 The SDK handles: batching, retry with backoff, anonymous ID generation, localStorage persistence, and flushing on `beforeunload`.

@@ -7,6 +7,7 @@
 **Goal:** Monorepo, shared tooling, local infrastructure up.
 
 **Tasks:**
+
 - Init monorepo with Turborepo or `pnpm workspaces`
 - Setup shared packages: `@app/logger`, `@app/kafka`, `@app/redis`, `@app/types`
 - Docker Compose with: Redpanda, Redis, PostgreSQL, TimescaleDB, ClickHouse
@@ -27,6 +28,7 @@
 **Tasks:**
 
 `ingest-service`
+
 - Express app, `POST /track` endpoint
 - Validate only `event` + `projectId` present
 - Publish to `raw-events` Kafka topic
@@ -34,12 +36,14 @@
 - Idempotency: hash `(projectId + userId + timestamp + event)` → dedup key in Redis with 60s TTL
 
 `validation-service`
+
 - Kafka consumer on `raw-events`
 - Full Zod schema validation
 - Valid → `validated-events`, invalid → `dead-letter-events`
 - Log rejection reasons
 
 `enrichment-service`
+
 - Kafka consumer on `validated-events`
 - MaxMind GeoLite2 for IP → geo (local DB file, no external call)
 - `ua-parser-js` for User-Agent parsing
@@ -59,10 +63,12 @@
 **Tasks:**
 
 `raw-storage-service`
+
 - Kafka consumer on `enriched-events`
 - Buffer events in memory (1000 events or 5s flush interval)
 - Batch insert into ClickHouse `events` table
 - ClickHouse schema:
+
 ```sql
 CREATE TABLE events (
   project_id    String,
@@ -82,6 +88,7 @@ ORDER BY (project_id, event, timestamp);
 ```
 
 `stream-processor-service` (basic)
+
 - Kafka consumer on `enriched-events`
 - Increment Redis counters:
   - `counter:{projectId}:{event}:{bucket_1min}`
@@ -91,6 +98,7 @@ ORDER BY (project_id, event, timestamp);
 - Write hourly rollups to TimescaleDB hypertable
 
 TimescaleDB schema:
+
 ```sql
 CREATE TABLE event_rollups (
   project_id  TEXT,
@@ -115,17 +123,20 @@ SELECT create_hypertable('event_rollups', 'bucket');
 **Tasks:**
 
 `project-service`
+
 - CRUD: create project, get project, list projects
 - API key generation: `pk_live_{random32}` → hash with bcrypt → store hash
 - Event schema definitions per project (stored in PostgreSQL, cached in Redis)
 - Expose internal endpoint for validation-service to fetch schemas
 
 `auth-service`
+
 - Register / login for dashboard users
 - JWT access token (15min) + refresh token (7d)
 - Org/workspace scoping (familiar from CRM)
 
 `api-gateway`
+
 - Two auth strategies:
   - **API key** (ingest path): extract `Authorization: Bearer pk_live_...`, validate against project-service
   - **JWT** (dashboard path): validate and forward user context
@@ -148,6 +159,7 @@ SELECT create_hypertable('event_rollups', 'bucket');
 **Tasks:**
 
 Endpoints:
+
 ```
 GET /projects/:id/metrics
   ?event=page_view
@@ -174,6 +186,7 @@ GET /projects/:id/events/live
 ```
 
 Implementation:
+
 - Simple time-range queries → TimescaleDB (fast, pre-aggregated)
 - Funnel + retention + user-level queries → ClickHouse
 - Cache frequent queries: Redis with `query:{hash}` key, 30s TTL
@@ -190,12 +203,14 @@ Implementation:
 **Services built:** `websocket-service`
 
 **Tasks:**
+
 - `ws-service` subscribes to Redis Pub/Sub channel `live:{projectId}`
 - `stream-processor` publishes to that channel on every 1-min bucket close
 - Client connects: `ws://gateway/live?projectId=proj_abc&token=...`
 - Gateway authenticates then proxies WebSocket to ws-service
 - ws-service rooms by `projectId`, fans out updates to all connected dashboards
 - Payload:
+
 ```json
 {
   "type": "metric_update",
@@ -218,6 +233,7 @@ Implementation:
 **Package:** `@app/sdk` (published or imported locally)
 
 **Tasks:**
+
 - Auto-generate anonymous `deviceId` (UUID stored in localStorage)
 - Batch events: flush every 5s or when batch hits 20 events
 - Retry with exponential backoff on network failure (3 attempts)
@@ -226,10 +242,10 @@ Implementation:
 - Source maps + minified build via `tsup`
 
 ```typescript
-const analytics = new Analytics({ apiKey: 'pk_live_abc' })
-analytics.identify('usr_123', { plan: 'pro' })
-analytics.track('button_click', { buttonId: 'upgrade-cta' })
-analytics.page()
+const analytics = new Analytics({ apiKey: "pk_live_abc" });
+analytics.identify("usr_123", { plan: "pro" });
+analytics.track("button_click", { buttonId: "upgrade-cta" });
+analytics.page();
 ```
 
 **Deliverable:** Drop SDK into any HTML page → events appear in your dashboard live.
@@ -243,11 +259,13 @@ analytics.page()
 **Tasks:**
 
 Distributed tracing
+
 - Add OpenTelemetry SDK to every service
 - Propagate `traceparent` header through Kafka messages (custom header)
 - Deploy Jaeger → trace one event from `POST /track` all the way to WebSocket push
 
 Metrics
+
 - Expose `/metrics` (Prometheus format) from every service
 - Key metrics per service:
   - ingest: `events_received_total`, `kafka_publish_latency_ms`
@@ -258,6 +276,7 @@ Metrics
 - Build Kafka consumer lag dashboard (most important operational metric)
 
 Logging
+
 - `@app/logger` wraps Winston, outputs structured JSON
 - Every log includes: `service`, `traceId`, `projectId`, `level`
 - Deploy Loki + Grafana Logs (or just ELK if preferred)
@@ -273,21 +292,25 @@ Logging
 **Tasks:**
 
 Circuit breakers
+
 - Wrap ClickHouse calls in `opossum` circuit breaker
 - On open circuit → serve from TimescaleDB cache or return stale Redis data
 - Alert via Prometheus when circuit opens
 
 Dead letter queue processor
+
 - Consume `dead-letter-events`
 - Log with full context, store in PostgreSQL for manual inspection
 - Admin endpoint: `GET /admin/dlq` to view, `POST /admin/dlq/:id/retry` to requeue
 
 Kafka consumer resilience
+
 - Implement manual offset commit (don't auto-commit)
 - On processing failure: retry 3x → send to DLQ → commit offset
 - Prevents poison pill messages from blocking the consumer
 
 Graceful shutdown
+
 - On `SIGTERM`: stop accepting new work, drain in-flight processing, flush buffers, disconnect cleanly
 - Kubernetes `preStop` hook gives 30s grace period
 
@@ -300,6 +323,7 @@ Graceful shutdown
 **Goal:** Production-grade deployment.
 
 **Tasks:**
+
 - Write `Deployment` + `Service` + `ConfigMap` + `Secret` manifests per service
 - Horizontal Pod Autoscaler on `ingest-service` (CPU-based) and `stream-processor` (Kafka lag-based — KEDA)
 - Redpanda Helm chart
@@ -314,18 +338,18 @@ Graceful shutdown
 
 ### Summary Timeline
 
-| Phase | Focus | Week |
-|---|---|---|
-| 0 | Foundation & infra | 1 |
-| 1 | Ingest pipeline | 2 |
-| 2 | Storage layer | 3 |
-| 3 | Project & auth | 4 |
-| 4 | Query API | 5 |
-| 5 | Live WebSocket | 6 |
-| 6 | Client SDK | 7 |
-| 7 | Observability | 8 |
-| 8 | Resilience | 9 |
-| 9 | Kubernetes | 10 |
+| Phase | Focus              | Week |
+| ----- | ------------------ | ---- |
+| 0     | Foundation & infra | 1    |
+| 1     | Ingest pipeline    | 2    |
+| 2     | Storage layer      | 3    |
+| 3     | Project & auth     | 4    |
+| 4     | Query API          | 5    |
+| 5     | Live WebSocket     | 6    |
+| 6     | Client SDK         | 7    |
+| 7     | Observability      | 8    |
+| 8     | Resilience         | 9    |
+| 9     | Kubernetes         | 10   |
 
 ---
 

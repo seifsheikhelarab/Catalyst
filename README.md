@@ -22,29 +22,29 @@ Client SDK → API Gateway → Ingest Service → Kafka (raw-events)
 
 ## Stack
 
-| Component | Technology |
-|-----------|------------|
-| Runtime | TypeScript / Bun |
-| Message Broker | Kafka (Redpanda locally) |
-| Cache | Redis |
-| Time-series | TimescaleDB (PostgreSQL extension) |
-| OLAP | ClickHouse |
-| Relational | PostgreSQL |
+| Component      | Technology                         |
+| -------------- | ---------------------------------- |
+| Runtime        | TypeScript / Bun                   |
+| Message Broker | Kafka (Redpanda locally)           |
+| Cache          | Redis                              |
+| Time-series    | TimescaleDB (PostgreSQL extension) |
+| OLAP           | ClickHouse                         |
+| Relational     | PostgreSQL                         |
 
 ## Services
 
-| Service | Purpose |
-|---------|---------|
-| `ingest-service` | Receive events, publish to Kafka, return 202 |
-| `validation-service` | Zod schema validation per project |
-| `enrichment-service` | GeoIP, UA parsing, session stitching |
+| Service                    | Purpose                                          |
+| -------------------------- | ------------------------------------------------ |
+| `ingest-service`           | Receive events, publish to Kafka, return 202     |
+| `validation-service`       | Zod schema validation per project                |
+| `enrichment-service`       | GeoIP, UA parsing, session stitching             |
 | `stream-processor-service` | Rolling windows, funnels, retention, HyperLogLog |
-| `raw-storage-service` | Batch write to ClickHouse |
-| `query-api-service` | REST API for dashboards |
-| `websocket-service` | Push live metric updates |
-| `project-service` | CRUD for projects, API keys |
-| `auth-service` | JWT auth for dashboard |
-| `api-gateway` | Auth, rate limiting, routing |
+| `raw-storage-service`      | Batch write to ClickHouse                        |
+| `query-api-service`        | REST API for dashboards                          |
+| `websocket-service`        | Push live metric updates                         |
+| `project-service`          | CRUD for projects, API keys                      |
+| `auth-service`             | JWT auth for dashboard                           |
+| `api-gateway`              | Auth, rate limiting, routing                     |
 
 ## Quick Start
 
@@ -76,7 +76,7 @@ Each service can be run independently:
 # Terminal 1: Ingest service
 bun --filter ingest-service dev
 
-# Terminal 2: Validation service  
+# Terminal 2: Validation service
 bun --filter validation-service dev
 
 # Terminal 3: Enrichment service
@@ -105,6 +105,7 @@ Expected response: `202 Accepted`
 ### 5. Inspect Events
 
 Visit [Redpanda Console](http://localhost:6789) to see events flowing through topics:
+
 - `raw-events`
 - `validated-events`
 - `enriched-events`

@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import Redis from "ioredis";
 
 export interface RedisOptions {
   host?: string;
@@ -8,10 +8,10 @@ export interface RedisOptions {
 }
 
 const defaultOptions: RedisOptions = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
+  host: process.env.REDIS_HOST || "localhost",
+  port: parseInt(process.env.REDIS_PORT || "6379"),
   password: process.env.REDIS_PASSWORD,
-  db: parseInt(process.env.REDIS_DB || '0'),
+  db: parseInt(process.env.REDIS_DB || "0"),
 };
 
 let redisInstance: Redis | null = null;
@@ -29,8 +29,8 @@ export function getRedis(options: RedisOptions = {}): Redis {
     lazyConnect: true,
   });
 
-  redisInstance.on('error', (err) => {
-    console.error('Redis connection error:', err);
+  redisInstance.on("error", (err) => {
+    console.error("Redis connection error:", err);
   });
 
   return redisInstance;

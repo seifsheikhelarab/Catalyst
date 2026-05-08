@@ -1,4 +1,4 @@
-import pino from 'pino';
+import pino from "pino";
 
 export interface LoggerOptions {
   name?: string;
@@ -7,7 +7,11 @@ export interface LoggerOptions {
 }
 
 export function createLogger(options: LoggerOptions = {}) {
-  const { name = 'catalyst', level = 'info', pretty = process.env.NODE_ENV !== 'production' } = options;
+  const {
+    name = "catalyst",
+    level = "info",
+    pretty = process.env.NODE_ENV !== "production",
+  } = options;
 
   const config: pino.LoggerOptions = {
     name,
@@ -15,22 +19,17 @@ export function createLogger(options: LoggerOptions = {}) {
     formatters: {
       level: (label) => ({ level: label }),
     },
-    addTraceId: () => {
-      return {
-        traceId: process.env.TRACE_ID || crypto.randomUUID(),
-      };
-    },
   };
 
   if (pretty) {
     return pino({
       ...config,
       transport: {
-        target: 'pino-pretty',
+        target: "pino-pretty",
         options: {
           colorize: true,
-          translateTime: 'SYS:standard',
-          ignore: 'pid,hostname',
+          translateTime: "SYS:standard",
+          ignore: "pid,hostname",
         },
       },
     });
@@ -39,5 +38,5 @@ export function createLogger(options: LoggerOptions = {}) {
   return pino(config);
 }
 
-export const logger = createLogger({ name: 'catalyst' });
+export const logger = createLogger({ name: "catalyst" });
 export default logger;

@@ -1,8 +1,19 @@
 # Catalyst - Real-Time Analytics Pipeline
 
+## Operational Constraints
+
+- **Do not run servers, containers, or Docker** - Ask user to start infrastructure
+- **Use oxlint and oxfmt** - Not eslint/prettier (already configured in package.json)
+
 ## Project Status
 
-Greenfield monorepo. No implementation code exists yet - only documentation in `project_idea.md` and `implementation_plan.md`.
+Greenfield monorepo. Services exist but not yet tested. Phase 0 foundations incomplete:
+
+### Phase 0 - Remaining
+
+- Base `tsconfig.json` with path aliases
+- Centralized event schemas in `@app/types`
+- ESLint + Prettier configs replaced by oxlint/oxfmt
 
 ## Architecture
 
@@ -33,18 +44,18 @@ Client SDK → API Gateway → Ingest Service → Kafka (raw-events)
 
 ## Services to Build
 
-| Service | Purpose |
-|---------|---------|
-| `ingest-service` | Receive events, publish to Kafka, return 202 |
-| `validation-service` | Zod schema validation per project |
-| `enrichment-service` | GeoIP, UA parsing, session stitching |
+| Service                    | Purpose                                          |
+| -------------------------- | ------------------------------------------------ |
+| `ingest-service`           | Receive events, publish to Kafka, return 202     |
+| `validation-service`       | Zod schema validation per project                |
+| `enrichment-service`       | GeoIP, UA parsing, session stitching             |
 | `stream-processor-service` | Rolling windows, funnels, retention, HyperLogLog |
-| `raw-storage-service` | Batch write to ClickHouse |
-| `query-api-service` | REST API for dashboards |
-| `websocket-service` | Push live metric updates |
-| `project-service` | CRUD for projects, API keys |
-| `auth-service` | JWT auth for dashboard |
-| `api-gateway` | Auth, rate limiting, routing |
+| `raw-storage-service`      | Batch write to ClickHouse                        |
+| `query-api-service`        | REST API for dashboards                          |
+| `websocket-service`        | Push live metric updates                         |
+| `project-service`          | CRUD for projects, API keys                      |
+| `auth-service`             | JWT auth for dashboard                           |
+| `api-gateway`              | Auth, rate limiting, routing                     |
 
 ## Kafka Topics
 
@@ -71,9 +82,22 @@ raw-events → validated-events → enriched-events → (stream-processor / raw-
 ## Entry Points
 
 This is a greenfield project. Start with Phase 0 of `implementation_plan.md`:
+
 - Initialize monorepo structure
 - Set up shared packages
 - Create Docker Compose for local infrastructure
+
+## Running Services
+
+```bash
+# Start infrastructure (YOU run this)
+docker compose up
+
+# Run services (from monorepo root)
+bun run ingest     # ingest-service on port 3000
+bun run validate  # validation-service (Kafka consumer)
+bun run enrich    # enrichment-service (Kafka consumer)
+```
 
 ## Reference
 
