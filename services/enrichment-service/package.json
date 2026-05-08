@@ -1,0 +1,21 @@
+{
+  "name": "@catalyst/enrichment-service",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts"
+  },
+  "dependencies": {
+    "@catalyst/kafka": "workspace:*",
+    "@catalyst/redis": "workspace:*",
+    "@catalyst/types": "workspace:*",
+    "@catalyst/logger": "workspace:*",
+    "zod": "^4.4.3",
+    "ua-parser-js": "^2.0.9",
+    "maxmind": "^5.0.6"
+  },
+  "devDependencies": {
+    "@types/ua-parser-js": "^0.7.39"
+  }
+}

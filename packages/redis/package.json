@@ -1,0 +1,11 @@
+{
+  "name": "@catalyst/redis",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "ioredis": "^5.10.1"
+  }
+}

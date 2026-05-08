@@ -1,0 +1,26 @@
+{
+  "name": "catalyst",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "build": "bun build",
+    "lint": "oxlint .",
+    "fmt": "oxfmt .",
+    "ingest": "bun run --cwd services/ingest-service src/index.ts",
+    "validate": "bun run --cwd services/validation-service src/index.ts",
+    "enrich": "bun run --cwd services/enrichment-service src/index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.13",
+    "oxfmt": "^0.48.0",
+    "oxlint": "^1.63.0",
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
