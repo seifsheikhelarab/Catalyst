@@ -1,5 +1,5 @@
 {
-  "name": "@catalyst/enrichment-service",
+  "name": "@catalyst/project-service",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
@@ -7,19 +7,17 @@
     "start": "bun src/index.ts"
   },
   "dependencies": {
-    "@catalyst/kafka": "workspace:*",
     "@catalyst/logger": "workspace:*",
     "@catalyst/redis": "workspace:*",
     "@catalyst/types": "workspace:*",
-    "@types/geoip-lite": "^1.4.4",
-    "geoip-lite": "^2.0.2",
-    "ioredis": "^5.10.1",
-    "kafkajs": "^2.2.4",
-    "pino": "^10.3.1",
-    "ua-parser-js": "^2.0.9",
+    "bcrypt": "^5.1.1",
+    "hono": "^4.12.18",
+    "pg": "^8.16.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.13"
+    "@types/bcrypt": "^5.0.2",
+    "@types/bun": "^1.3.13",
+    "@types/pg": "^8.11.0"
   }
 }

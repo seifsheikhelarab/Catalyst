@@ -10,9 +10,15 @@
     "build": "bun build",
     "lint": "oxlint .",
     "fmt": "oxfmt .",
+    "start": "bun scripts/start-all.ts",
     "ingest": "bun run --cwd services/ingest-service src/index.ts",
     "validate": "bun run --cwd services/validation-service src/index.ts",
-    "enrich": "bun run --cwd services/enrichment-service src/index.ts"
+    "enrich": "bun run --cwd services/enrichment-service src/index.ts",
+    "raw-storage": "bun run --cwd services/raw-storage-service src/index.ts",
+    "stream": "bun run --cwd services/stream-processor-service src/index.ts",
+    "project": "bun run --cwd services/project-service src/index.ts",
+    "auth": "bun run --cwd services/auth-service src/index.ts",
+    "gateway": "bun run --cwd services/api-gateway src/index.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.3.13",

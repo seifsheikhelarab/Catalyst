@@ -1,45 +1,32 @@
 import { Hono } from "hono";
-import { Kafka, logLevel } from "kafkajs";
-import Redis from "ioredis";
+import { getProducer, TOPICS } from "@catalyst/kafka";
+import { connectRedis } from "@catalyst/redis";
 import { RawEventSchema, type RawEvent } from "@catalyst/types";
-import pino from "pino";
+import { createLogger } from "@catalyst/logger";
 import crypto from "crypto";
 
-const logger = pino({
-  name: "ingest-service",
-  level: "info",
-});
-
-const TOPICS = {
-  RAW_EVENTS: "raw-events",
-  VALIDATED_EVENTS: "validated-events",
-  ENRICHED_EVENTS: "enriched-events",
-  DEAD_LETTER: "dead-letter-events",
-} as const;
+const logger = createLogger({ name: "ingest-service" });
 
 const INGRESS_TOPIC = TOPICS.RAW_EVENTS;
 const DEDUP_TTL = 60;
 
-const kafka = new Kafka({
-  clientId: "ingest-service",
-  brokers: [process.env.KAFKA_BROKER || "localhost:9092"],
-  logLevel: logLevel.WARN,
-});
-
 let producer: any = null;
 
-async function getProducer() {
+async function getKafkaProducer() {
   if (!producer) {
-    producer = kafka.producer();
-    await producer.connect();
+    producer = await getProducer();
   }
   return producer;
 }
 
-const redis = new Redis({
-  host: process.env.REDIS_HOST || "localhost",
-  port: parseInt(process.env.REDIS_PORT || "6379"),
-});
+let redis: any = null;
+
+async function getRedisClient() {
+  if (!redis) {
+    redis = await connectRedis();
+  }
+  return redis;
+}
 
 const app = new Hono();
 
@@ -59,15 +46,16 @@ app.post("/track", async (c) => {
 
   const event = parseResult.data as RawEvent;
 
+  const redisClient = await getRedisClient();
   const dedupKey = await computeDedupKey(event);
 
-  const existing = await redis.get(dedupKey);
+  const existing = await redisClient.get(dedupKey);
   if (existing) {
     logger.info({ dedupKey, event: event.event }, "Duplicate event rejected");
     return c.json({ status: "duplicate" }, 202);
   }
 
-  const prod = await getProducer();
+  const prod = await getKafkaProducer();
   const traceId = crypto.randomUUID();
 
   const message = {
@@ -88,7 +76,7 @@ app.post("/track", async (c) => {
     ],
   });
 
-  await redis.set(dedupKey, "1", "EX", DEDUP_TTL);
+  await redisClient.set(dedupKey, "1", "EX", DEDUP_TTL);
 
   logger.info({ event: event.event, projectId: event.projectId, traceId }, "Event published");
 
@@ -97,7 +85,7 @@ app.post("/track", async (c) => {
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 
-const port = parseInt(process.env.PORT || "3000");
+const port = parseInt(process.env.PORT || "3004");
 
 export default {
   port,

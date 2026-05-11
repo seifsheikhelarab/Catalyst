@@ -7,13 +7,32 @@
 
 ## Project Status
 
-Greenfield monorepo. Services exist but not yet tested. Phase 0 foundations incomplete:
+Greenfield monorepo. Services exist but not yet tested. Phases 0–3 complete.
 
-### Phase 0 - Remaining
+### Phase 0 - Complete
 
 - Base `tsconfig.json` with path aliases
-- Centralized event schemas in `@app/types`
+- Centralized event schemas in `@catalyst/types`
 - ESLint + Prettier configs replaced by oxlint/oxfmt
+
+### Phase 1 - Complete
+
+- `ingest-service`: POST /track → raw-events Kafka topic, idempotency via Redis dedup keys
+- `validation-service`: Consumes raw-events, validates with Zod, publishes to validated-events, invalid → dead-letter-events
+- `enrichment-service`: Consumes validated-events, adds geo (geoip-lite), UA parsing (ua-parser-js), session stitching (Redis)
+
+### Phase 2 - Complete
+
+- `raw-storage-service`: Consumes enriched-events, batches (1k or 5s), bulk inserts to ClickHouse
+- `stream-processor-service`: Consumes enriched-events, Redis counters (1m/1h/1d buckets), HyperLogLog unique users, hourly rollups to TimescaleDB
+- Schema init scripts: `scripts/init-clickhouse.sql`, `scripts/init-timescaledb.sql`
+
+### Phase 3 - Complete
+
+- `project-service`: Project CRUD, API key generation (bcrypt hashed), event schemas with Redis cache
+- `auth-service`: Register/login, JWT access (15min) + refresh (7d) tokens via jose, Redis revocation
+- `api-gateway`: Routes `/track` (API key), `/auth/*` (public), `/api/*` (JWT), `/projects/*` (both); Redis rate limiting per API key
+- Schema init: `scripts/init-phase3.sql`
 
 ## Architecture
 
@@ -67,7 +86,7 @@ raw-events → validated-events → enriched-events → (stream-processor / raw-
 ## Setup
 
 1. Monorepo with Turborepo or pnpm workspaces (Phase 0)
-2. Shared packages: `@app/logger`, `@app/kafka`, `@app/redis`, `@app/types`
+2. Shared packages: `@catalyst/logger`, `@catalyst/kafka`, `@catalyst/redis`, `@catalyst/types`
 3. `docker compose up` starts: Redpanda, Redis, PostgreSQL, TimescaleDB, ClickHouse, Redpanda Console
 
 ## Key Patterns
@@ -93,10 +112,22 @@ This is a greenfield project. Start with Phase 0 of `implementation_plan.md`:
 # Start infrastructure (YOU run this)
 docker compose up
 
+# Initialize databases (YOU run these once)
+clickhouse-client --query "$(cat scripts/init-clickhouse.sql)"
+docker exec -i catalyst-postgres psql -U catalyst -d catalyst < scripts/init-timescaledb.sql
+docker exec -i catalyst-postgres psql -U catalyst -d catalyst < scripts/init-phase3.sql
+
 # Run services (from monorepo root)
-bun run ingest     # ingest-service on port 3000
-bun run validate  # validation-service (Kafka consumer)
-bun run enrich    # enrichment-service (Kafka consumer)
+bun run start       # all services (gateway on 3000, ingest on 3004, project on 3001, auth on 3002)
+# Or run individually:
+bun run gateway     # api-gateway on port 3000
+bun run project     # project-service on port 3001
+bun run auth        # auth-service on port 3002
+bun run ingest      # ingest-service on port 3004
+bun run validate    # validation-service
+bun run enrich     # enrichment-service
+bun run raw-storage # raw-storage-service
+bun run stream     # stream-processor-service
 ```
 
 ## Reference

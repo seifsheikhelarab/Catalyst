@@ -1,5 +1,5 @@
 {
-  "name": "@catalyst/enrichment-service",
+  "name": "@catalyst/api-gateway",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
@@ -7,16 +7,12 @@
     "start": "bun src/index.ts"
   },
   "dependencies": {
-    "@catalyst/kafka": "workspace:*",
     "@catalyst/logger": "workspace:*",
     "@catalyst/redis": "workspace:*",
     "@catalyst/types": "workspace:*",
-    "@types/geoip-lite": "^1.4.4",
-    "geoip-lite": "^2.0.2",
+    "hono": "^4.12.18",
     "ioredis": "^5.10.1",
-    "kafkajs": "^2.2.4",
-    "pino": "^10.3.1",
-    "ua-parser-js": "^2.0.9",
+    "jose": "^6.0.11",
     "zod": "^4.4.3"
   },
   "devDependencies": {

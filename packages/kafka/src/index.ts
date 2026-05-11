@@ -1,5 +1,6 @@
 import {
   Kafka,
+  Partitioners,
   type Consumer,
   type Producer,
   logLevel,
@@ -46,7 +47,9 @@ export async function getProducer(options: KafkaOptions = {}): Promise<Producer>
   }
 
   const kafka = getKafka(options);
-  producerInstance = kafka.producer();
+  producerInstance = kafka.producer({
+    createPartitioner: Partitioners.LegacyPartitioner,
+  });
   await producerInstance.connect();
   return producerInstance;
 }

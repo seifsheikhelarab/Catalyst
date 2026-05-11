@@ -1,36 +1,34 @@
-import { Kafka, logLevel } from "kafkajs";
-import Redis from "ioredis";
+import { getKafka, getProducer, TOPICS } from "@catalyst/kafka";
+import { connectRedis } from "@catalyst/redis";
 import { type EnrichedEvent, type ValidatedEvent } from "@catalyst/types";
-import pino from "pino";
+import { createLogger } from "@catalyst/logger";
 import crypto from "crypto";
-import UASparser from "ua-parser-js";
+import { UAParser } from "ua-parser-js";
+import geoip from "geoip-lite";
 
-const logger = pino({ level: "info", name: "enrichment-service" });
-
-const TOPICS = {
-  DEAD_LETTER: "dead-letter-events",
-  ENRICHED_EVENTS: "enriched-events",
-  RAW_EVENTS: "raw-events",
-  VALIDATED_EVENTS: "validated-events",
-} as const;
+const logger = createLogger({ name: "enrichment-service" });
 
 const CONSUMER_GROUP = "enrichment-service";
 const INPUT_TOPIC = TOPICS.VALIDATED_EVENTS;
 const OUTPUT_TOPIC = TOPICS.ENRICHED_EVENTS;
 const SESSION_TTL = 1800;
 
-const kafka = new Kafka({
-  brokers: [process.env.KAFKA_BROKER || "localhost:9092"],
-  clientId: "enrichment-service",
-  logLevel: logLevel.WARN,
-});
+const kafka = getKafka({ clientId: "enrichment-service" });
+let consumer: any;
+let producer: any;
+let redis: any;
 
-const redis = new Redis({
-  host: process.env.REDIS_HOST || "localhost",
-  port: parseInt(process.env.REDIS_PORT || "6379"),
-});
+async function shutdown() {
+  logger.info("Shutting down...");
+  await consumer?.stop();
+  await consumer?.disconnect();
+  await producer?.disconnect();
+  await redis?.quit();
+  process.exit(0);
+}
 
-const UAParser = UASparser.UAParser;
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
 
 async function getOrCreateSession(projectId: string, userId: string): Promise<string> {
   const sessionKey = `session:${projectId}:${userId}`;
@@ -60,11 +58,11 @@ function parseUserAgent(userAgent?: string) {
 async function start() {
   logger.info({ topic: INPUT_TOPIC, group: CONSUMER_GROUP }, "Starting enrichment service");
 
-  const consumer = kafka.consumer({ groupId: CONSUMER_GROUP });
+  redis = await connectRedis();
+  consumer = kafka.consumer({ groupId: CONSUMER_GROUP });
   await consumer.connect();
 
-  const producer = kafka.producer();
-  await producer.connect();
+  producer = await getProducer();
 
   await consumer.subscribe({ topic: INPUT_TOPIC, fromBeginning: false });
 
@@ -83,12 +81,27 @@ async function start() {
           validatedEvent.properties?.userAgent as string,
         );
 
+        const ip =
+          (validatedEvent.properties?.ip as string) ||
+          (validatedEvent.properties?.clientIp as string);
+        let country: string | undefined;
+        let city: string | undefined;
+        if (ip) {
+          const geo = geoip.lookup(ip);
+          if (geo) {
+            country = geo.country;
+            city = geo.city;
+          }
+        }
+
         const sessionId = validatedEvent.userId
           ? await getOrCreateSession(validatedEvent.projectId, validatedEvent.userId)
           : undefined;
 
         const enrichedEvent: EnrichedEvent = {
           ...validatedEvent,
+          country,
+          city,
           deviceType,
           browser,
           os,

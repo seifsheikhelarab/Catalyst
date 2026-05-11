@@ -28,3 +28,12 @@ export const EnrichedEventSchema = ValidatedEventSchema.extend({
 });
 
 export type EnrichedEvent = z.infer<typeof EnrichedEventSchema>;
+
+export const DeadLetterEventSchema = z.object({
+  error: z.string(),
+  originalEvent: RawEventSchema,
+  reason: z.string(),
+  timestamp: z.number(),
+});
+
+export type DeadLetterEvent = z.infer<typeof DeadLetterEventSchema>;

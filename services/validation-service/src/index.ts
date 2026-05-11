@@ -1,35 +1,38 @@
-import { Kafka, logLevel } from "kafkajs";
+import { getKafka, getProducer, TOPICS } from "@catalyst/kafka";
 import { RawEventSchema, type RawEvent, type ValidatedEvent } from "@catalyst/types";
-import pino from "pino";
+import { createLogger } from "@catalyst/logger";
+import crypto from "crypto";
 
-const logger = pino({ name: "validation-service", level: "info" });
-
-const TOPICS = {
-  RAW_EVENTS: "raw-events",
-  VALIDATED_EVENTS: "validated-events",
-  ENRICHED_EVENTS: "enriched-events",
-  DEAD_LETTER: "dead-letter-events",
-} as const;
+const logger = createLogger({ name: "validation-service" });
 
 const CONSUMER_GROUP = "validation-service";
 const INPUT_TOPIC = TOPICS.RAW_EVENTS;
 const VALIDATED_TOPIC = TOPICS.VALIDATED_EVENTS;
 const DLQ_TOPIC = TOPICS.DEAD_LETTER;
 
-const kafka = new Kafka({
-  clientId: "validation-service",
-  brokers: [process.env.KAFKA_BROKER || "localhost:9092"],
-  logLevel: logLevel.WARN,
-});
+const kafka = getKafka({ clientId: "validation-service" });
+
+let consumer: any;
+let producer: any;
+
+async function shutdown() {
+  logger.info("Shutting down...");
+  await consumer?.stop();
+  await consumer?.disconnect();
+  await producer?.disconnect();
+  process.exit(0);
+}
+
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
 
 async function start() {
   logger.info({ topic: INPUT_TOPIC, group: CONSUMER_GROUP }, "Starting validation service");
 
-  const consumer = kafka.consumer({ groupId: CONSUMER_GROUP });
+  consumer = kafka.consumer({ groupId: CONSUMER_GROUP });
   await consumer.connect();
 
-  const producer = kafka.producer();
-  await producer.connect();
+  producer = await getProducer();
 
   await consumer.subscribe({ topic: INPUT_TOPIC, fromBeginning: false });
 
@@ -38,7 +41,7 @@ async function start() {
       const rawValue = message.value?.toString();
       if (!rawValue) return;
 
-      const traceId = message.headers?.traceId?.toString() || "unknown";
+      const traceId = message.headers?.traceId?.toString() || crypto.randomUUID();
 
       try {
         const rawEvent = JSON.parse(rawValue) as RawEvent;
@@ -58,10 +61,11 @@ async function start() {
                 key: rawEvent.projectId,
                 value: JSON.stringify({
                   originalEvent: rawEvent,
-                  error: validationResult.error.issues,
-                  traceId,
-                  failedAt: Date.now(),
+                  reason: "Schema validation failed",
+                  error: JSON.stringify(validationResult.error.issues),
+                  timestamp: Date.now(),
                 }),
+                headers: { traceId },
               },
             ],
           });
@@ -79,6 +83,7 @@ async function start() {
             {
               key: validatedEvent.projectId,
               value: JSON.stringify(validatedEvent),
+              headers: { traceId },
             },
           ],
         });

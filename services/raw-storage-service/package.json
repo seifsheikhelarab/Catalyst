@@ -1,5 +1,5 @@
 {
-  "name": "@catalyst/enrichment-service",
+  "name": "@catalyst/raw-storage-service",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
@@ -9,14 +9,9 @@
   "dependencies": {
     "@catalyst/kafka": "workspace:*",
     "@catalyst/logger": "workspace:*",
-    "@catalyst/redis": "workspace:*",
     "@catalyst/types": "workspace:*",
-    "@types/geoip-lite": "^1.4.4",
-    "geoip-lite": "^2.0.2",
-    "ioredis": "^5.10.1",
+    "clickhouse": "^2.0.0",
     "kafkajs": "^2.2.4",
-    "pino": "^10.3.1",
-    "ua-parser-js": "^2.0.9",
     "zod": "^4.4.3"
   },
   "devDependencies": {
