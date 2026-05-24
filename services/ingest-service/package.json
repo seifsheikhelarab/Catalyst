@@ -8,14 +8,16 @@
   },
   "dependencies": {
     "@catalyst/kafka": "workspace:*",
+    "@catalyst/metrics": "workspace:*",
+    "@catalyst/tracing": "workspace:*",
     "@catalyst/types": "workspace:*",
-    "hono": "^4.12.18",
+    "hono": "^4.12.22",
     "ioredis": "^5.10.1",
     "kafkajs": "^2.2.4",
     "pino": "^10.3.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.13"
+    "@types/bun": "^1.3.14"
   }
 }

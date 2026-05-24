@@ -1,12 +1,18 @@
-import { getKafka, TOPICS } from "@catalyst/kafka";
+import { getKafka, TOPICS, type Consumer } from "@catalyst/kafka";
 import { connectRedis } from "@catalyst/redis";
 import { type EnrichedEvent } from "@catalyst/types";
 import { createLogger } from "@catalyst/logger";
+import { initTracing } from "@catalyst/tracing";
+import { createCounter, createHistogram, metricsHandler } from "@catalyst/metrics";
 import pg from "pg";
 
 const { Pool } = pg;
 
 const logger = createLogger({ name: "stream-processor-service" });
+
+const eventsProcessed = createCounter({ name: "stream_events_processed_total", help: "Events processed for rollups" });
+const rollupsFlushed = createCounter({ name: "stream_rollups_flushed_total", help: "Rollup batches flushed to TimescaleDB" });
+const processingLag = createHistogram({ name: "stream_processing_lag_ms", help: "Event processing lag ms", buckets: [10, 50, 100, 250, 500, 1000, 5000] });
 
 const CONSUMER_GROUP = "stream-processor-service";
 const INPUT_TOPIC = TOPICS.ENRICHED_EVENTS;
@@ -14,7 +20,7 @@ const HLL_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 const kafka = getKafka({ clientId: "stream-processor-service" });
 
-let consumer: any;
+let consumer: Consumer;
 let redis: any;
 let pgPool: pg.Pool;
 let rollupTimer: any = null;
@@ -127,6 +133,19 @@ async function flushRollups() {
       values.flat(),
     );
     logger.info({ count: rolls.size }, "Rollups written to TimescaleDB");
+    rollupsFlushed.inc(rolls.size);
+
+    for (const [key, { count, unique, ts }] of rolls) {
+      const parts = key.split("|");
+      redis.publish(`live:${parts[0]}`, JSON.stringify({
+        type: "metric_update",
+        projectId: parts[0],
+        event: parts[1],
+        count_1m: count,
+        active_users: unique,
+        timestamp: ts,
+      })).catch((err: any) => { logger.error({ error: err }, "Failed to publish live update"); });
+    }
   } catch (err) {
     logger.error({ error: err }, "Failed to write rollups");
   }
@@ -147,6 +166,7 @@ process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
 async function start() {
+  initTracing({ serviceName: "stream-processor-service" });
   logger.info({ topic: INPUT_TOPIC, group: CONSUMER_GROUP }, "Starting stream-processor service");
 
   redis = await connectRedis();
@@ -168,12 +188,15 @@ async function start() {
 
   await consumer.run({
     eachMessage: async ({ message }) => {
+      const startTime = Date.now();
       const rawValue = message.value?.toString();
       if (!rawValue) return;
 
       try {
         const event = JSON.parse(rawValue) as EnrichedEvent;
         await processEvent(event);
+        eventsProcessed.inc();
+        processingLag.observe(Date.now() - startTime);
       } catch (err) {
         logger.error({ error: err }, "Error processing event");
       }

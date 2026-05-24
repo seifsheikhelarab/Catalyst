@@ -1,12 +1,16 @@
-import { getKafka, getProducer, TOPICS } from "@catalyst/kafka";
+import { getKafka, getProducer, TOPICS, type Consumer, type Producer } from "@catalyst/kafka";
 import { connectRedis } from "@catalyst/redis";
 import { type EnrichedEvent, type ValidatedEvent } from "@catalyst/types";
 import { createLogger } from "@catalyst/logger";
+import { initTracing, startSpanWithTraceContext } from "@catalyst/tracing";
+import { createCounter, metricsHandler } from "@catalyst/metrics";
 import crypto from "crypto";
 import { UAParser } from "ua-parser-js";
 import geoip from "geoip-lite";
 
 const logger = createLogger({ name: "enrichment-service" });
+
+const eventsProcessed = createCounter({ name: "enrichment_events_processed_total", help: "Events enriched and forwarded" });
 
 const CONSUMER_GROUP = "enrichment-service";
 const INPUT_TOPIC = TOPICS.VALIDATED_EVENTS;
@@ -14,8 +18,8 @@ const OUTPUT_TOPIC = TOPICS.ENRICHED_EVENTS;
 const SESSION_TTL = 1800;
 
 const kafka = getKafka({ clientId: "enrichment-service" });
-let consumer: any;
-let producer: any;
+let consumer: Consumer;
+let producer: Producer;
 let redis: any;
 
 async function shutdown() {
@@ -56,6 +60,7 @@ function parseUserAgent(userAgent?: string) {
 }
 
 async function start() {
+  initTracing({ serviceName: "enrichment-service" });
   logger.info({ topic: INPUT_TOPIC, group: CONSUMER_GROUP }, "Starting enrichment service");
 
   redis = await connectRedis();
@@ -77,6 +82,7 @@ async function start() {
       try {
         const validatedEvent = JSON.parse(rawValue) as ValidatedEvent;
 
+        const span = startSpanWithTraceContext({ traceparent: message.headers?.traceparent?.toString() }, "enrichment.process");
         const { deviceType, browser, os } = parseUserAgent(
           validatedEvent.properties?.userAgent as string,
         );
@@ -118,6 +124,9 @@ async function start() {
             },
           ],
         });
+
+        eventsProcessed.inc();
+        span.end();
 
         logger.info({ traceId, event: enrichedEvent.event, sessionId }, "Event enriched");
       } catch (err) {

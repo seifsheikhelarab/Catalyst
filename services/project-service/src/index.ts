@@ -4,9 +4,12 @@ import bcrypt from "bcrypt";
 import { connectRedis } from "@catalyst/redis";
 import { createLogger } from "@catalyst/logger";
 import crypto from "crypto";
+import { initTracing, startSpan } from "@catalyst/tracing";
+import { createCounter, metricsHandler } from "@catalyst/metrics";
 
 const { Pool } = pg;
 const logger = createLogger({ name: "project-service" });
+const requestsTotal = createCounter({ name: "project_requests_total", help: "Total project service requests" });
 
 const app = new Hono();
 let redis: any;
@@ -33,6 +36,7 @@ process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
 app.post("/internal/keys/:key/validate", async (c) => {
+  requestsTotal.inc();
   const presentedKey = c.req.param("key");
   if (!presentedKey.startsWith("pk_live_")) return c.json({ valid: false }, 401);
   const prefix = presentedKey.slice(0, 16);
@@ -59,6 +63,7 @@ app.post("/internal/keys/:key/validate", async (c) => {
 });
 
 app.post("/projects", async (c) => {
+  requestsTotal.inc();
   const body = await c.req.json();
   const { name, orgId } = body;
   if (!name || !orgId) return c.json({ error: "name and orgId required" }, 400);
@@ -76,6 +81,7 @@ app.post("/projects", async (c) => {
 });
 
 app.get("/projects/:id", async (c) => {
+  requestsTotal.inc();
   const id = c.req.param("id");
   const client = await getClient();
   try {
@@ -88,6 +94,7 @@ app.get("/projects/:id", async (c) => {
 });
 
 app.get("/projects", async (c) => {
+  requestsTotal.inc();
   const orgId = c.req.query("orgId");
   const client = await getClient();
   try {
@@ -107,6 +114,7 @@ app.get("/projects", async (c) => {
 });
 
 app.post("/projects/:id/keys", async (c) => {
+  requestsTotal.inc();
   const projectId = c.req.param("id");
   const body = await c.req.json().catch(() => ({}));
   const name = body.name || "default";
@@ -131,6 +139,7 @@ app.post("/projects/:id/keys", async (c) => {
 });
 
 app.get("/projects/:id/keys", async (c) => {
+  requestsTotal.inc();
   const projectId = c.req.param("id");
   const client = await getClient();
   try {
@@ -145,6 +154,7 @@ app.get("/projects/:id/keys", async (c) => {
 });
 
 app.post("/projects/:id/schemas", async (c) => {
+  requestsTotal.inc();
   const projectId = c.req.param("id");
   const body = await c.req.json();
   const { eventName, schema } = body;
@@ -168,6 +178,7 @@ app.post("/projects/:id/schemas", async (c) => {
 });
 
 app.get("/projects/:id/schemas", async (c) => {
+  requestsTotal.inc();
   const projectId = c.req.param("id");
   const client = await getClient();
   try {
@@ -181,6 +192,7 @@ app.get("/projects/:id/schemas", async (c) => {
 });
 
 app.get("/projects/:id/schemas/:eventName", async (c) => {
+  requestsTotal.inc();
   const projectId = c.req.param("id");
   const eventName = c.req.param("eventName");
   const rclient = await getRedisClient();
@@ -203,12 +215,17 @@ app.get("/projects/:id/schemas/:eventName", async (c) => {
   }
 });
 
-app.get("/health", (c) => c.json({ status: "ok" }));
+app.get("/metrics", (_c) => metricsHandler());
+app.get("/health", (c) => {
+  requestsTotal.inc();
+  return c.json({ status: "ok" });
+});
 
 const port = parseInt(process.env.PORT || "3001");
 export default { port, fetch: app.fetch };
 
 async function start() {
+  initTracing({ serviceName: "project-service" });
   pool = new Pool({
     host: process.env.POSTGRES_HOST || "localhost",
     port: parseInt(process.env.POSTGRES_PORT || "5432"),

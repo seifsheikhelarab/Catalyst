@@ -19,7 +19,10 @@
       "@catalyst/logger": ["./packages/logger/src/index.ts"],
       "@catalyst/kafka": ["./packages/kafka/src/index.ts"],
       "@catalyst/redis": ["./packages/redis/src/index.ts"],
-      "@catalyst/types": ["./packages/types/src/index.ts"]
+      "@catalyst/types": ["./packages/types/src/index.ts"],
+      "@catalyst/tracing": ["./packages/tracing/src/index.ts"],
+      "@catalyst/metrics": ["./packages/metrics/src/index.ts"],
+      "@catalyst/sdk": ["./packages/sdk/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "**/dist", "**/build"]

@@ -9,14 +9,16 @@
   "dependencies": {
     "@catalyst/kafka": "workspace:*",
     "@catalyst/logger": "workspace:*",
+    "@catalyst/metrics": "workspace:*",
     "@catalyst/redis": "workspace:*",
+    "@catalyst/tracing": "workspace:*",
     "@catalyst/types": "workspace:*",
     "kafkajs": "^2.2.4",
-    "pg": "^8.16.0",
+    "pg": "^8.21.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.13",
-    "@types/pg": "^8.11.0"
+    "@types/bun": "^1.3.14",
+    "@types/pg": "^8.20.0"
   }
 }

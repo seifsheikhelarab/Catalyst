@@ -1,9 +1,15 @@
-import { getKafka, TOPICS } from "@catalyst/kafka";
+import { getKafka, TOPICS, type Consumer } from "@catalyst/kafka";
 import { type EnrichedEvent } from "@catalyst/types";
 import { createLogger } from "@catalyst/logger";
+import { initTracing } from "@catalyst/tracing";
+import { createCounter, createHistogram, metricsHandler } from "@catalyst/metrics";
 import { ClickHouse } from "clickhouse";
 
 const logger = createLogger({ name: "raw-storage-service" });
+
+const batchesInserted = createCounter({ name: "raw_storage_batches_inserted_total", help: "Batches inserted to ClickHouse" });
+const eventsStored = createCounter({ name: "raw_storage_events_stored_total", help: "Events stored in ClickHouse" });
+const insertDuration = createHistogram({ name: "raw_storage_insert_duration_ms", help: "ClickHouse insert duration ms", buckets: [50, 100, 250, 500, 1000, 2500, 5000] });
 
 const CONSUMER_GROUP = "raw-storage-service";
 const INPUT_TOPIC = TOPICS.ENRICHED_EVENTS;
@@ -21,7 +27,7 @@ const clickhouse = new ClickHouse({
   password: process.env.CLICKHOUSE_PASSWORD || "catalyst",
 });
 
-let consumer: any;
+let consumer: Consumer;
 let buffer: EnrichedEvent[] = [];
 let lastFlush = Date.now();
 let flushTimer: any = null;
@@ -54,7 +60,11 @@ async function flushBuffer() {
         FORMAT values
       `;
 
-      await clickhouse.insert(query).values(values).toPromise();
+      const end = insertDuration.startTimer();
+      await clickhouse.insert(query, values).toPromise();
+      end();
+      batchesInserted.inc();
+      eventsStored.inc(rows.length);
       logger.info({ count: rows.length, ms: Date.now() - now }, "Batch inserted");
       lastFlush = Date.now();
       return;
@@ -89,6 +99,7 @@ process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
 async function start() {
+  initTracing({ serviceName: "raw-storage-service" });
   logger.info({ topic: INPUT_TOPIC, group: CONSUMER_GROUP }, "Starting raw-storage service");
 
   consumer = kafka.consumer({ groupId: CONSUMER_GROUP });

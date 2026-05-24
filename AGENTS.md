@@ -34,6 +34,10 @@ Greenfield monorepo. Services exist but not yet tested. Phases 0–3 complete.
 - `api-gateway`: Routes `/track` (API key), `/auth/*` (public), `/api/*` (JWT), `/projects/*` (both); Redis rate limiting per API key
 - Schema init: `scripts/init-phase3.sql`
 
+### Phase 4 - Complete
+
+- `query-api-service`: REST endpoints for metrics (TimescaleDB), funnels + retention + users (ClickHouse), live (Redis); query caching with 30s TTL
+
 ## Architecture
 
 ```
@@ -128,6 +132,7 @@ bun run validate    # validation-service
 bun run enrich     # enrichment-service
 bun run raw-storage # raw-storage-service
 bun run stream     # stream-processor-service
+bun run query-api  # query-api-service
 ```
 
 ## Reference

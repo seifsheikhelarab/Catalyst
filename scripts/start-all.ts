@@ -8,6 +8,8 @@ const services = [
   "../services/project-service/src/index.ts",
   "../services/auth-service/src/index.ts",
   "../services/api-gateway/src/index.ts",
+  "../services/query-api-service/src/index.ts",
+  "../services/websocket-service/src/index.ts",
 ];
 
 const procs = services.map((script) =>

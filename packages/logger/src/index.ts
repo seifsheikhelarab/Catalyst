@@ -37,6 +37,3 @@ export function createLogger(options: LoggerOptions = {}) {
 
   return pino(config);
 }
-
-export const logger = createLogger({ name: "catalyst" });
-export default logger;

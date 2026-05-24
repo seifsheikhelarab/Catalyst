@@ -1,0 +1,11 @@
+{
+  "name": "@catalyst/metrics",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "prom-client": "^15.1.3"
+  }
+}

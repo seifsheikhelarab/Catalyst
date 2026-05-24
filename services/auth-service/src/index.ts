@@ -4,10 +4,16 @@ import bcrypt from "bcrypt";
 import { SignJWT, jwtVerify } from "jose";
 import { connectRedis } from "@catalyst/redis";
 import { createLogger } from "@catalyst/logger";
+import { initTracing, startSpan } from "@catalyst/tracing";
+import { createCounter, metricsHandler } from "@catalyst/metrics";
 import crypto from "crypto";
 
 const { Pool } = pg;
 const logger = createLogger({ name: "auth-service" });
+
+const requestsTotal = createCounter({ name: "auth_requests_total", help: "Total auth service requests" });
+const loginSuccess = createCounter({ name: "auth_login_success_total", help: "Successful logins" });
+const loginFailed = createCounter({ name: "auth_login_failed_total", help: "Failed login attempts" });
 
 const ACCESS_TOKEN_TTL = 15 * 60;
 const REFRESH_TOKEN_TTL = 7 * 24 * 60 * 60;
@@ -58,6 +64,7 @@ async function verifyToken(token: string) {
 }
 
 app.post("/auth/register", async (c) => {
+  requestsTotal.inc();
   const body = await c.req.json();
   const { email, password, orgName } = body;
   if (!email || !password) return c.json({ error: "email and password required" }, 400);
@@ -99,6 +106,7 @@ app.post("/auth/register", async (c) => {
 });
 
 app.post("/auth/login", async (c) => {
+  requestsTotal.inc();
   const body = await c.req.json();
   const { email, password } = body;
   if (!email || !password) return c.json({ error: "email and password required" }, 400);
@@ -109,11 +117,19 @@ app.post("/auth/login", async (c) => {
       "SELECT id, org_id, email, password_hash FROM users WHERE email = $1",
       [email],
     );
-    if (result.rows.length === 0) return c.json({ error: "invalid credentials" }, 401);
+    if (result.rows.length === 0) {
+      loginFailed.inc();
+      return c.json({ error: "invalid credentials" }, 401);
+    }
 
     const user = result.rows[0];
     const match = await bcrypt.compare(password, user.password_hash);
-    if (!match) return c.json({ error: "invalid credentials" }, 401);
+    if (!match) {
+      loginFailed.inc();
+      return c.json({ error: "invalid credentials" }, 401);
+    }
+
+    loginSuccess.inc();
 
     const accessToken = await signToken(
       { sub: user.id, orgId: user.org_id, type: "access" },
@@ -138,6 +154,7 @@ app.post("/auth/login", async (c) => {
 });
 
 app.post("/auth/refresh", async (c) => {
+  requestsTotal.inc();
   const body = await c.req.json();
   const { refreshToken } = body;
   if (!refreshToken) return c.json({ error: "refresh token required" }, 400);
@@ -158,6 +175,7 @@ app.post("/auth/refresh", async (c) => {
 });
 
 app.get("/auth/me", async (c) => {
+  requestsTotal.inc();
   const auth = c.req.header("Authorization");
   if (!auth?.startsWith("Bearer ")) return c.json({ error: "unauthorized" }, 401);
 
@@ -178,6 +196,7 @@ app.get("/auth/me", async (c) => {
 });
 
 app.post("/auth/logout", async (c) => {
+  requestsTotal.inc();
   const body = await c.req.json();
   const { refreshToken } = body;
   if (refreshToken) {
@@ -187,12 +206,15 @@ app.post("/auth/logout", async (c) => {
   return c.json({ ok: true });
 });
 
+app.get("/metrics", (_c) => metricsHandler());
 app.get("/health", (c) => c.json({ status: "ok" }));
 
 const port = parseInt(process.env.PORT || "3002");
 export default { port, fetch: app.fetch };
 
 async function start() {
+  initTracing({ serviceName: "auth-service" });
+
   pool = new Pool({
     host: process.env.POSTGRES_HOST || "localhost",
     port: parseInt(process.env.POSTGRES_PORT || "5432"),

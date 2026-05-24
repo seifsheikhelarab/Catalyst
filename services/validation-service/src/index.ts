@@ -1,9 +1,14 @@
-import { getKafka, getProducer, TOPICS } from "@catalyst/kafka";
+import { getKafka, getProducer, TOPICS, type Consumer, type Producer } from "@catalyst/kafka";
 import { RawEventSchema, type RawEvent, type ValidatedEvent } from "@catalyst/types";
 import { createLogger } from "@catalyst/logger";
+import { initTracing, startSpanWithTraceContext } from "@catalyst/tracing";
+import { createCounter, metricsHandler } from "@catalyst/metrics";
 import crypto from "crypto";
 
 const logger = createLogger({ name: "validation-service" });
+
+const eventsValid = createCounter({ name: "validation_events_valid_total", help: "Valid events forwarded" });
+const eventsRejected = createCounter({ name: "validation_events_rejected_total", help: "Events rejected by schema" });
 
 const CONSUMER_GROUP = "validation-service";
 const INPUT_TOPIC = TOPICS.RAW_EVENTS;
@@ -12,8 +17,8 @@ const DLQ_TOPIC = TOPICS.DEAD_LETTER;
 
 const kafka = getKafka({ clientId: "validation-service" });
 
-let consumer: any;
-let producer: any;
+let consumer: Consumer;
+let producer: Producer;
 
 async function shutdown() {
   logger.info("Shutting down...");
@@ -27,6 +32,7 @@ process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
 async function start() {
+  initTracing({ serviceName: "validation-service" });
   logger.info({ topic: INPUT_TOPIC, group: CONSUMER_GROUP }, "Starting validation service");
 
   consumer = kafka.consumer({ groupId: CONSUMER_GROUP });
@@ -45,6 +51,8 @@ async function start() {
 
       try {
         const rawEvent = JSON.parse(rawValue) as RawEvent;
+
+        const span = startSpanWithTraceContext({ traceparent: message.headers?.traceparent?.toString() }, "validation.process", { "event.projectId": rawEvent?.projectId });
 
         const validationResult = RawEventSchema.safeParse(rawEvent);
 
@@ -69,6 +77,8 @@ async function start() {
               },
             ],
           });
+          eventsRejected.inc();
+          span.end();
           return;
         }
 
@@ -87,6 +97,9 @@ async function start() {
             },
           ],
         });
+
+        eventsValid.inc();
+        span.end();
 
         logger.info({ traceId, event: validatedEvent.event }, "Event validated");
       } catch (err) {
