@@ -155,7 +155,7 @@ services:
       start_period: 20s
 
   ingest-service:
-    image: oven/bun:1
+    image: oven/bun:1.3.14
     container_name: catalyst-ingest
     working_dir: /app
     volumes:
@@ -172,7 +172,7 @@ services:
       redis: { condition: service_healthy }
 
   validate-enrich-service:
-    image: oven/bun:1
+    image: oven/bun:1.3.14
     container_name: catalyst-validate-enrich
     working_dir: /app
     volumes:
@@ -191,7 +191,7 @@ services:
       management-service: { condition: service_started }
 
   stream-processor-service:
-    image: oven/bun:1
+    image: oven/bun:1.3.14
     container_name: catalyst-stream-processor
     working_dir: /app
     volumes:
@@ -213,7 +213,7 @@ services:
       postgres-timescale: { condition: service_healthy }
 
   management-service:
-    image: oven/bun:1
+    image: oven/bun:1.3.14
     container_name: catalyst-management
     working_dir: /app
     volumes:
@@ -236,7 +236,7 @@ services:
       postgres-timescale: { condition: service_healthy }
 
   query-api-service:
-    image: oven/bun:1
+    image: oven/bun:1.3.14
     container_name: catalyst-query-api
     working_dir: /app
     volumes:
@@ -257,7 +257,7 @@ services:
       postgres-timescale: { condition: service_healthy }
 
   api-gateway:
-    image: oven/bun:1
+    image: oven/bun:1.3.14
     container_name: catalyst-gateway
     working_dir: /app
     volumes:

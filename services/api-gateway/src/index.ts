@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { jwtVerify } from "jose";
-import { connectRedis } from "@catalyst/redis";
+import { connectRedis, connectNewRedis } from "@catalyst/redis";
 import type { RedisClient } from "@catalyst/redis";
 import { createLogger, flushLogs } from "@catalyst/logger";
 import crypto from "crypto";
@@ -230,7 +230,7 @@ async function start() {
   redis = await getRedisClient();
 
   // Subscribe to Redis live:* channels for WebSocket broadcasting
-  subRedis = await connectRedis();
+  subRedis = await connectNewRedis();
   await subRedis.psubscribe("live:*");
   subRedis.on("pmessage", (_pattern: string, channel: string, message: string) => {
     const projectId = channel.split(":").slice(1).join(":");
