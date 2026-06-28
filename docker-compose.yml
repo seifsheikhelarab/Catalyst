@@ -141,6 +141,10 @@ services:
       - POSTGRES_DB=catalyst
     volumes:
       - postgres-data:/var/lib/postgresql
+      - ./scripts/init-timescaledb.sql:/docker-entrypoint-initdb.d/01-init-timescaledb.sql
+      - ./scripts/init-phase3.sql:/docker-entrypoint-initdb.d/02-init-phase3.sql
+      - ./scripts/init-events.sql:/docker-entrypoint-initdb.d/03-init-events.sql
+      - ./scripts/init-phase8.sql:/docker-entrypoint-initdb.d/04-init-phase8.sql
     command: >
       postgres -c shared_preload_libraries=timescaledb -c max_connections=100
     healthcheck:
@@ -149,6 +153,128 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  ingest-service:
+    image: oven/bun:1
+    container_name: catalyst-ingest
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: bun run services/ingest-service/src/index.ts
+    ports:
+      - "3004:3004"
+    environment:
+      PORT: "3004"
+      KAFKA_BROKER: redpanda:29092
+      REDIS_HOST: redis
+    depends_on:
+      redpanda: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  validate-enrich-service:
+    image: oven/bun:1
+    container_name: catalyst-validate-enrich
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: bun run services/validate-enrich-service/src/index.ts
+    ports:
+      - "9101:9101"
+    environment:
+      METRICS_PORT: "9101"
+      KAFKA_BROKER: redpanda:29092
+      REDIS_HOST: redis
+      MANAGEMENT_SERVICE_URL: http://management-service:3001
+    depends_on:
+      redpanda: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      management-service: { condition: service_started }
+
+  stream-processor-service:
+    image: oven/bun:1
+    container_name: catalyst-stream-processor
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: bun run services/stream-processor-service/src/index.ts
+    ports:
+      - "9103:9103"
+    environment:
+      METRICS_PORT: "9103"
+      KAFKA_BROKER: redpanda:29092
+      REDIS_HOST: redis
+      POSTGRES_HOST: postgres-timescale
+      POSTGRES_USER: catalyst
+      POSTGRES_PASSWORD: catalyst
+      POSTGRES_DB: catalyst
+    depends_on:
+      redpanda: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      postgres-timescale: { condition: service_healthy }
+
+  management-service:
+    image: oven/bun:1
+    container_name: catalyst-management
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: bun run services/management-service/src/index.ts
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: "3001"
+      JWT_SECRET: "${JWT_SECRET:-dev-secret-change-in-prod}"
+      KAFKA_BROKER: redpanda:29092
+      REDIS_HOST: redis
+      POSTGRES_HOST: postgres-timescale
+      POSTGRES_USER: catalyst
+      POSTGRES_PASSWORD: catalyst
+      POSTGRES_DB: catalyst
+    depends_on:
+      redpanda: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      postgres-timescale: { condition: service_healthy }
+
+  query-api-service:
+    image: oven/bun:1
+    container_name: catalyst-query-api
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: bun run services/query-api-service/src/index.ts
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: "3003"
+      REDIS_HOST: redis
+      POSTGRES_HOST: postgres-timescale
+      POSTGRES_USER: catalyst
+      POSTGRES_PASSWORD: catalyst
+      POSTGRES_DB: catalyst
+      MANAGEMENT_SERVICE_URL: http://management-service:3001
+    depends_on:
+      redis: { condition: service_healthy }
+      postgres-timescale: { condition: service_healthy }
+
+  api-gateway:
+    image: oven/bun:1
+    container_name: catalyst-gateway
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: bun run services/api-gateway/src/index.ts
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      JWT_SECRET: "${JWT_SECRET:-dev-secret-change-in-prod}"
+      REDIS_HOST: redis
+      MANAGEMENT_SERVICE_URL: http://management-service:3001
+      INGEST_SERVICE_URL: http://ingest-service:3004
+      QUERY_SERVICE_URL: http://query-api-service:3003
+    depends_on:
+      redis: { condition: service_healthy }
+      management-service: { condition: service_started }
 
 networks:
   default:

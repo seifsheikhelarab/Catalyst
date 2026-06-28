@@ -55,14 +55,7 @@ raw-events → enriched-events → dead-letter-events
 ## Setup
 
 1. `bun install` from monorepo root
-2. `docker compose up` starts: Redpanda, Redis, TimescaleDB, Redpanda Console, Jaeger, Prometheus, Grafana, Loki
-3. Initialize databases:
-   ```bash
-   docker exec -i catalyst-postgres psql -U catalyst -d catalyst < scripts/init-events.sql
-   docker exec -i catalyst-postgres psql -U catalyst -d catalyst < scripts/init-timescaledb.sql
-   docker exec -i catalyst-postgres psql -U catalyst -d catalyst < scripts/init-phase3.sql
-   docker exec -i catalyst-postgres psql -U catalyst -d catalyst < scripts/init-phase8.sql
-   ```
+2. `docker compose up` starts everything: Redpanda, Redis, TimescaleDB, Redpanda Console, Jaeger, Prometheus, Grafana, Loki, and all 6 services. DB init scripts auto-apply on first start via `/docker-entrypoint-initdb.d/`.
 
 ## Key Patterns
 
@@ -75,13 +68,14 @@ raw-events → enriched-events → dead-letter-events
 ## Running Services
 
 ```bash
-bun run start       # all 6 services
-bun run ingest      # ingest-service
-bun run validate-enrich  # validate-enrich-service
-bun run stream      # stream-processor-service
-bun run management  # management-service
-bun run query-api   # query-api-service
-bun run gateway     # api-gateway
+docker compose up      # everything (infra + all 6 services)
+bun run start          # all 6 services locally (if running infra separately)
+bun run ingest         # ingest-service only
+bun run validate-enrich
+bun run stream
+bun run management
+bun run query-api
+bun run gateway
 ```
 
 ## Reference

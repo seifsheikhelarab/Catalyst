@@ -6,23 +6,19 @@ scrape_configs:
   - job_name: "catalyst-services"
     static_configs:
       - targets:
-          - "host.docker.internal:3000"
-          - "host.docker.internal:3001"
-          - "host.docker.internal:3002"
-          - "host.docker.internal:3003"
-          - "host.docker.internal:3004"
-          - "host.docker.internal:3005"
-          - "host.docker.internal:9101"
-          - "host.docker.internal:9102"
-          - "host.docker.internal:9103"
-          - "host.docker.internal:9104"
+          - "api-gateway:3000"
+          - "management-service:3001"
+          - "query-api-service:3003"
+          - "ingest-service:3004"
+          - "validate-enrich-service:9101"
+          - "stream-processor-service:9103"
         labels:
           project: catalyst
 
   - job_name: "redpanda"
     static_configs:
       - targets:
-          - "host.docker.internal:9644"
+          - "redpanda:9644"
 
   - job_name: "prometheus"
     static_configs:
