@@ -10,6 +10,7 @@ const services = [
   "../services/api-gateway/src/index.ts",
   "../services/query-api-service/src/index.ts",
   "../services/websocket-service/src/index.ts",
+  "../services/dlq-processor-service/src/index.ts",
 ];
 
 const procs = services.map((script) =>

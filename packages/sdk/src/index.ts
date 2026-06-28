@@ -106,7 +106,7 @@ export class Analytics {
             "Content-Type": "application/json",
             Authorization: `Bearer ${this.apiKey}`,
           },
-          body: JSON.stringify(batch.length === 1 ? batch[0] : batch),
+          body: JSON.stringify(batch),
         });
         if (res.ok) return;
         lastError = new Error(`HTTP ${res.status}`);
@@ -124,10 +124,12 @@ export class Analytics {
   private flushSync(): void {
     if (this.batch.length === 0) return;
     try {
+      const payload = this.batch;
+      this.batch = [];
       const data = navigator.sendBeacon
-        ? navigator.sendBeacon(this.endpoint, JSON.stringify(this.batch))
+        ? navigator.sendBeacon(this.endpoint, JSON.stringify(payload))
         : false;
-      if (data) this.batch = [];
+      if (!data) this.batch.unshift(...payload);
     } catch {
       // ignore sendBeacon errors during unload
     }

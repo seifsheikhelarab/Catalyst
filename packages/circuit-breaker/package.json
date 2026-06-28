@@ -1,0 +1,14 @@
+{
+  "name": "@catalyst/circuit-breaker",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "echo \"no tests yet\" && exit 0"
+  },
+  "dependencies": {
+    "@catalyst/logger": "workspace:*",
+    "opossum": "^8.4.0"
+  }
+}

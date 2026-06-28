@@ -37,3 +37,16 @@ export const DeadLetterEventSchema = z.object({
 });
 
 export type DeadLetterEvent = z.infer<typeof DeadLetterEventSchema>;
+
+export const DLQEnvelopeSchema = z.object({
+  originalTopic: z.string(),
+  originalPartition: z.number(),
+  originalOffset: z.string(),
+  originalKey: z.string().optional(),
+  originalValue: z.string().optional(),
+  originalHeaders: z.record(z.string(), z.string()).optional(),
+  reason: z.string(),
+  timestamp: z.number(),
+});
+
+export type DLQEnvelope = z.infer<typeof DLQEnvelopeSchema>;

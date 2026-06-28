@@ -1,9 +1,13 @@
-import { Counter, Histogram, Registry, type CounterConfiguration, type HistogramConfiguration } from "prom-client";
+import { Counter, Gauge, Histogram, Registry, type CounterConfiguration, type GaugeConfiguration, type HistogramConfiguration } from "prom-client";
 
 const registry = new Registry();
 
 export function createCounter(config: CounterConfiguration<string>): Counter<string> {
   return new Counter({ ...config, registers: [registry] });
+}
+
+export function createGauge(config: GaugeConfiguration<string>): Gauge<string> {
+  return new Gauge({ ...config, registers: [registry] });
 }
 
 export function createHistogram(config: HistogramConfiguration<string>): Histogram<string> {

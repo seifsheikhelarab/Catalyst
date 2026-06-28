@@ -1,44 +1,137 @@
 services:
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: catalyst-jaeger
+    ports:
+      - "16686:16686"
+      - "4318:4318"
+      - "4317:4317"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - LOG_LEVEL=info
+    volumes:
+      - jaeger-data:/badger
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:14269/status" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: catalyst-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./data/prometheus:/etc/prometheus
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    depends_on:
+      jaeger:
+        condition: service_started
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:9090/-/ready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: catalyst-grafana
+    ports:
+      - "3030:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_USERS_DEFAULT_THEME=dark
+    volumes:
+      - ./data/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./data/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:3000/api/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  loki:
+    image: grafana/loki:latest
+    container_name: catalyst-loki
+    ports:
+      - "3100:3100"
+    user: "10001:10001"
+    volumes:
+      - ./data/loki:/etc/loki
+      - loki-data:/loki
+    command: "-config.file=/etc/loki/loki-config.yml"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:3100/ready | grep -q ready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   redpanda:
-    image: docker.redpanda.com/redpandadata/redpanda:v23.3.11
+    image: docker.redpanda.com/redpandadata/redpanda:latest
     container_name: catalyst-redpanda
     command: >
-      redpanda start
-      --kafka-addr internal://0.0.0.0:29092,external://0.0.0.0:9092
-      --advertise-kafka-addr internal://redpanda:29092,external://localhost:9092
-      --rpc-addr redpanda:33145
-      --advertise-rpc-addr redpanda:33145
-      --smp 1
-      --memory 1G
+      redpanda start --kafka-addr internal://0.0.0.0:29092,external://0.0.0.0:9092 --advertise-kafka-addr internal://redpanda:29092,external://localhost:9092 --rpc-addr redpanda:33145 --advertise-rpc-addr redpanda:33145 --smp 1 --memory 1G --reserve-memory 0M --overprovisioned
     ports:
       - "9092:9092"
       - "29092:29092"
       - "33145:33145"
+      - "9644:9644"
     volumes:
       - redpanda-data:/var/lib/redpanda/data
     environment:
       - REDPANDA_ADMIN_API_ADDRESSES=0.0.0.0:9644
+    healthcheck:
+      test: [ "CMD", "rpk", "cluster", "health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   redpanda-console:
-    image: docker.redpanda.com/redpandadata/console:v2.3.8
+    image: docker.redpanda.com/redpandadata/console:latest
     container_name: catalyst-redpanda-console
     ports:
       - "8080:8080"
     environment:
       - KAFKA_BROKERS=redpanda:29092
       - KAFKA_TLS_ENABLED=false
+    depends_on:
+      redpanda:
+        condition: service_healthy
 
   redis:
-    image: redis:7-alpine
+    image: redis:latest
     container_name: catalyst-redis
     ports:
       - "6379:6379"
     volumes:
       - redis-data:/data
     command: redis-server --appendonly yes
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   postgres-timescale:
-    image: timescale/timescaledb:2.13.0-pg16
+    image: timescale/timescaledb:latest-pg18
     container_name: catalyst-postgres
     ports:
       - "5432:5432"
@@ -47,14 +140,18 @@ services:
       - POSTGRES_PASSWORD=catalyst
       - POSTGRES_DB=catalyst
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     command: >
-      postgres
-      -c shared_preload_libraries=timescaledb
-      -c max_connections=100
+      postgres -c shared_preload_libraries=timescaledb -c max_connections=100
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U catalyst -d catalyst" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   clickhouse:
-    image: clickhouse/clickhouse-server:23.12-alpine
+    image: clickhouse/clickhouse-server:latest
     container_name: catalyst-clickhouse
     ports:
       - "8123:8123"
@@ -63,14 +160,29 @@ services:
       - CLICKHOUSE_DB=catalyst
       - CLICKHOUSE_USER=catalyst
       - CLICKHOUSE_PASSWORD=catalyst
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
     volumes:
       - clickhouse-data:/var/lib/clickhouse
     ulimits:
       nofile:
         soft: 262144
         hard: 262144
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  default:
+    name: catalyst-net
 
 volumes:
+  jaeger-data:
+  prometheus-data:
+  grafana-data:
+  loki-data:
   redpanda-data:
   redis-data:
   postgres-data:

@@ -1,5 +1,7 @@
 import Redis from "ioredis";
 
+export type RedisClient = Redis;
+
 export interface RedisOptions {
   host?: string;
   port?: number;

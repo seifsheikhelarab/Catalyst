@@ -1,5 +1,7 @@
 import pino from "pino";
 
+const loggers = new Set<pino.Logger>();
+
 export interface LoggerOptions {
   name?: string;
   level?: string;
@@ -21,8 +23,9 @@ export function createLogger(options: LoggerOptions = {}) {
     },
   };
 
+  let logger: pino.Logger;
   if (pretty) {
-    return pino({
+    logger = pino({
       ...config,
       transport: {
         target: "pino-pretty",
@@ -33,7 +36,16 @@ export function createLogger(options: LoggerOptions = {}) {
         },
       },
     });
+  } else {
+    logger = pino(config);
   }
 
-  return pino(config);
+  loggers.add(logger);
+  return logger;
+}
+
+export async function flushLogs(): Promise<void> {
+  for (const logger of loggers) {
+    await new Promise<void>((resolve, reject) => logger.flush((err) => err ? reject(err) : resolve()));
+  }
 }

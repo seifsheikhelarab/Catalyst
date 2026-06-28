@@ -2,10 +2,12 @@ import { Hono } from "hono";
 import pg from "pg";
 import { ClickHouse } from "clickhouse";
 import { connectRedis } from "@catalyst/redis";
-import { createLogger } from "@catalyst/logger";
+import { createLogger, flushLogs } from "@catalyst/logger";
 import crypto from "crypto";
-import { initTracing, startSpan } from "@catalyst/tracing";
-import { createCounter, createHistogram, metricsHandler } from "@catalyst/metrics";
+import { initTracing, startSpan, shutdownTracing } from "@catalyst/tracing";
+import { createCounter, createGauge, createHistogram, metricsHandler } from "@catalyst/metrics";
+import { createBreaker, type TrackedBreaker } from "@catalyst/circuit-breaker";
+import type { RedisClient } from "@catalyst/redis";
 
 const { Pool } = pg;
 const logger = createLogger({ name: "query-api-service" });
@@ -13,6 +15,8 @@ const logger = createLogger({ name: "query-api-service" });
 const queryTotal = createCounter({ name: "query_api_requests_total", help: "Total query API requests" });
 const queryDuration = createHistogram({ name: "query_api_duration_ms", help: "Query duration ms", buckets: [10, 25, 50, 100, 250, 500, 1000, 2500] });
 const cacheHits = createCounter({ name: "query_api_cache_hits_total", help: "Cache hits" });
+const circuitFallbacks = createCounter({ name: "query_api_circuit_fallbacks_total", help: "Queries served from fallback when circuit open" });
+const circuitState = createGauge({ name: "query_api_clickhouse_circuit_state", help: "ClickHouse circuit state (0=closed,1=half-open,2=open)" });
 
 type Variables = {
   orgId: string;
@@ -21,7 +25,7 @@ type Variables = {
 const app = new Hono<{ Variables: Variables }>();
 let pgPool: pg.Pool;
 let clickhouse: ClickHouse;
-let redis: any;
+let redis: RedisClient | null = null;
 
 const CACHE_TTL = 30;
 const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
@@ -40,14 +44,36 @@ async function getRedisClient() {
   return redis;
 }
 
+const chBreaker: TrackedBreaker<[string], any[] | null> = createBreaker(
+  async (q: string) => (await clickhouse.query(q).toPromise()) as any[],
+  {
+    name: "clickhouse-query",
+    timeout: 10_000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 15_000,
+    volumeThreshold: 5,
+    fallback: () => {
+      logger.warn("ClickHouse circuit open, returning null (callers will return 503)");
+      return null;
+    },
+  },
+);
+
+setInterval(() => {
+  circuitState.set(chBreaker.isOpen ? 2 : chBreaker.state === "halfOpen" ? 1 : 0);
+}, 1000).unref();
+
 function queryHash(parts: string[]): string {
   return `query:${crypto.createHash("sha1").update(parts.join(":")).digest("hex")}`;
 }
 
 async function shutdown() {
   logger.info("Shutting down...");
+  chBreaker.shutdown();
   await pgPool?.end();
   await redis?.quit();
+  await shutdownTracing();
+  await flushLogs();
   process.exit(0);
 }
 
@@ -77,9 +103,9 @@ app.use("/projects/:id/*", async (c, next) => {
     try {
       const res = await fetch(`${PROJECT_SERVICE}/projects/${projectId}`);
       if (!res.ok) return c.json({ error: "not found" }, 404);
-      const project: any = await res.json();
+      const project = await res.json() as Record<string, unknown>;
       if (project.org_id !== orgId) return c.json({ error: "forbidden" }, 403);
-      await rclient.setex(cacheKey, 300, project.org_id);
+      await rclient.setex(cacheKey, 300, String(project.org_id));
     } catch {
       return c.json({ error: "upstream unavailable" }, 502);
     }
@@ -150,7 +176,7 @@ app.get("/projects/:id/funnels", async (c) => {
   const safeTo = escape(to || "2099-12-31");
 
   try {
-    const result: any[] = [];
+    const result: Array<{ from: string; to: string; users: number }> = [];
     for (let i = 0; i < steps.length - 1; i++) {
       const stepFrom = escape(steps[i]);
       const stepTo = escape(steps[i + 1]);
@@ -166,8 +192,12 @@ app.get("/projects/:id/funnels", async (c) => {
           AND a.timestamp >= '${safeFrom}'
           AND a.timestamp <= '${safeTo}'
       `;
-      const rows = await clickhouse.query(q).toPromise();
-      const count = parseInt((rows as any[])?.[0]?.users || "0", 10);
+      const rows = await chBreaker.fire(q);
+      if (rows === null) {
+        circuitFallbacks.inc();
+        return c.json({ error: "service degraded, retry later" }, 503);
+      }
+      const count = parseInt(String((rows as Array<Record<string, unknown>>)?.[0]?.users || "0"), 10);
       result.push({ from: steps[i], to: steps[i + 1], users: count });
     }
     queryTotal.inc();
@@ -216,7 +246,11 @@ app.get("/projects/:id/retention", async (c) => {
       GROUP BY cohort_week, return_week
       ORDER BY cohort_week, return_week
     `;
-    const rows = (await clickhouse.query(q).toPromise()) as any[];
+    const rows = await chBreaker.fire(q);
+    if (rows === null) {
+      circuitFallbacks.inc();
+      return c.json({ error: "service degraded, retry later" }, 503);
+    }
     const cohorts: Map<string, Map<number, number>> = new Map();
     for (const row of rows) {
       const cw = String(row.cohort_week).slice(0, 10);
@@ -225,9 +259,9 @@ app.get("/projects/:id/retention", async (c) => {
       if (!cohorts.has(cw)) cohorts.set(cw, new Map());
       cohorts.get(cw)!.set(weekDiff, parseInt(row.users, 10));
     }
-    const result: any[] = [];
+    const result: Array<Record<string, unknown>> = [];
     for (const [cohort, weeks] of cohorts) {
-      const row: any = { cohort, total: 0 };
+      const row: Record<string, unknown> = { cohort, total: 0 };
       for (let p = 0; p < periods; p++) {
         row[`period_${p}`] = weeks.get(p) || 0;
         if (p === 0) row.total = weeks.get(p) || 0;
@@ -268,7 +302,11 @@ app.get("/projects/:id/users", async (c) => {
       ORDER BY last_seen DESC
       LIMIT ${limit} OFFSET ${offset}
     `;
-    const rows = await clickhouse.query(q).toPromise();
+    const rows = await chBreaker.fire(q);
+    if (rows === null) {
+      circuitFallbacks.inc();
+      return c.json({ error: "service degraded, retry later" }, 503);
+    }
     queryTotal.inc();
     return c.json(rows);
   } catch (err) {
@@ -293,7 +331,7 @@ app.get("/projects/:id/events/live", async (c) => {
       keys.push(...batch);
     } while (cursor !== "0");
 
-    const events: any[] = [];
+    const events: Array<{ event: string; count: number }> = [];
     for (const key of keys) {
       const parts = key.split(":");
       const event = parts[2];

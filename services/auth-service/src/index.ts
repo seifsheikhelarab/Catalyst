@@ -3,9 +3,10 @@ import pg from "pg";
 import bcrypt from "bcrypt";
 import { SignJWT, jwtVerify } from "jose";
 import { connectRedis } from "@catalyst/redis";
-import { createLogger } from "@catalyst/logger";
-import { initTracing, startSpan } from "@catalyst/tracing";
+import { createLogger, flushLogs } from "@catalyst/logger";
+import { initTracing, startSpan, shutdownTracing } from "@catalyst/tracing";
 import { createCounter, metricsHandler } from "@catalyst/metrics";
+import type { RedisClient } from "@catalyst/redis";
 import crypto from "crypto";
 
 const { Pool } = pg;
@@ -19,7 +20,7 @@ const ACCESS_TOKEN_TTL = 15 * 60;
 const REFRESH_TOKEN_TTL = 7 * 24 * 60 * 60;
 
 const app = new Hono();
-let redis: any;
+let redis: RedisClient | null = null;
 let pool: pg.Pool;
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "dev-secret-change-in-prod");
@@ -37,6 +38,8 @@ async function shutdown() {
   logger.info("Shutting down...");
   await pool?.end();
   await redis?.quit();
+  await shutdownTracing();
+  await flushLogs();
   process.exit(0);
 }
 
@@ -96,9 +99,9 @@ app.post("/auth/register", async (c) => {
     await rclient.setex(`refresh:${refreshToken}`, REFRESH_TOKEN_TTL, userId);
 
     return c.json({ accessToken, refreshToken, user: { id: userId, email, orgId } }, 201);
-  } catch (err: any) {
+  } catch (err) {
     await client.query("ROLLBACK");
-    if (err.code === "23505") return c.json({ error: "email already exists" }, 409);
+    if (err && typeof err === "object" && "code" in err && (err as Record<string, unknown>).code === "23505") return c.json({ error: "email already exists" }, 409);
     return c.json({ error: "registration failed" }, 500);
   } finally {
     client.release();
@@ -167,11 +170,18 @@ app.post("/auth/refresh", async (c) => {
   const stored = await rclient.get(`refresh:${refreshToken}`);
   if (!stored || stored !== payload.sub) return c.json({ error: "token revoked" }, 401);
 
+  // Revoke old refresh token (rotation for security)
+  await rclient.del(`refresh:${refreshToken}`);
+
   const userId = payload.sub as string;
   const orgId = payload.orgId as string;
   const newAccessToken = await signToken({ sub: userId, orgId, type: "access" }, ACCESS_TOKEN_TTL);
+  const newRefreshToken = await signToken({ sub: userId, orgId, type: "refresh" }, REFRESH_TOKEN_TTL);
 
-  return c.json({ accessToken: newAccessToken });
+  // Store new refresh token
+  await rclient.setex(`refresh:${newRefreshToken}`, REFRESH_TOKEN_TTL, userId);
+
+  return c.json({ accessToken: newAccessToken, refreshToken: newRefreshToken });
 });
 
 app.get("/auth/me", async (c) => {

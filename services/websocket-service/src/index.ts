@@ -1,9 +1,10 @@
 import { connectRedis } from "@catalyst/redis";
-import { createLogger } from "@catalyst/logger";
+import { createLogger, flushLogs } from "@catalyst/logger";
 import { jwtVerify } from "jose";
 import type { ServerWebSocket } from "bun";
-import { initTracing, startSpan } from "@catalyst/tracing";
+import { initTracing, startSpan, shutdownTracing } from "@catalyst/tracing";
 import { createCounter, metricsHandler } from "@catalyst/metrics";
+import type { RedisClient } from "@catalyst/redis";
 
 const logger = createLogger({ name: "websocket-service" });
 
@@ -18,6 +19,8 @@ interface ClientData {
 }
 
 const rooms = new Map<string, Set<ServerWebSocket<ClientData>>>();
+let server: ReturnType<typeof Bun.serve<ClientData>> | null = null;
+let subRedis: RedisClient | null = null;
 
 function joinRoom(ws: ServerWebSocket<ClientData>, projectId: string) {
   if (!rooms.has(projectId)) rooms.set(projectId, new Set());
@@ -43,14 +46,14 @@ function broadcast(projectId: string, data: string) {
 
 async function start() {
   initTracing({ serviceName: "websocket-service" });
-  const subRedis = await connectRedis();
+  subRedis = await connectRedis();
   await subRedis.psubscribe("live:*");
   subRedis.on("pmessage", (_pattern: string, channel: string, message: string) => {
     const projectId = channel.split(":").slice(1).join(":");
     broadcast(projectId, message);
   });
 
-  const server = Bun.serve<ClientData>({
+  server = Bun.serve<ClientData>({
     port: PORT,
     async fetch(req, server) {
       const url = new URL(req.url);
@@ -102,6 +105,10 @@ async function start() {
           return;
         }
 
+        // Extract trace context from the token's sub/orgId for telemetry
+        const span = startSpan("ws.connect", { "ws.projectId": projectId });
+        span.end();
+
         connectionsTotal.inc();
         joinRoom(ws, projectId);
         logger.info({ projectId, roomSize: rooms.get(projectId)?.size }, "WebSocket connected");
@@ -118,17 +125,20 @@ async function start() {
   });
 
   logger.info({ port: PORT }, "WebSocket service running");
-
-  async function shutdown() {
-    logger.info("Shutting down...");
-    server.stop();
-    await subRedis.quit();
-    process.exit(0);
-  }
-
-  process.on("SIGTERM", shutdown);
-  process.on("SIGINT", shutdown);
 }
+
+async function shutdown() {
+  if (!server) return;
+  logger.info("Shutting down...");
+  server.stop();
+  if (subRedis) await subRedis.quit();
+  await shutdownTracing();
+  await flushLogs();
+  process.exit(0);
+}
+
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
 
 start().catch((err) => {
   logger.error({ error: err }, "Fatal error");

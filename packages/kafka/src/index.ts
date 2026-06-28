@@ -3,9 +3,11 @@ import {
   Partitioners,
   type Consumer,
   type Producer,
-  logLevel,
+  type EachMessagePayload,
+  type KafkaMessage,
   type KafkaConfig,
   type BrokersFunction,
+  logLevel,
 } from "kafkajs";
 
 export interface KafkaOptions {
@@ -13,6 +15,11 @@ export interface KafkaOptions {
   brokers?: string[] | BrokersFunction;
   ssl?: boolean;
   sasl?: KafkaConfig["sasl"];
+}
+
+export interface ConsumerOptions extends KafkaOptions {
+  sessionTimeout?: number;
+  heartbeatInterval?: number;
 }
 
 const defaultOptions: KafkaOptions = {
@@ -35,6 +42,7 @@ export function getKafka(options: KafkaOptions = {}): Kafka {
     clientId: config.clientId,
     ssl: config.ssl,
     sasl: config.sasl,
+    connectionTimeout: parseInt(process.env.KAFKA_CONNECTION_TIMEOUT || "30000", 10),
     logLevel: logLevel.WARN,
   });
 
@@ -56,12 +64,96 @@ export async function getProducer(options: KafkaOptions = {}): Promise<Producer>
 
 export async function createConsumer(
   groupId: string,
-  options: KafkaOptions = {},
+  options: ConsumerOptions = {},
 ): Promise<Consumer> {
   const kafka = getKafka(options);
-  const consumer = kafka.consumer({ groupId });
+  const consumer = kafka.consumer({
+    groupId,
+    sessionTimeout: options.sessionTimeout ?? 30000,
+    heartbeatInterval: options.heartbeatInterval ?? 3000,
+  });
   await consumer.connect();
   return consumer;
+}
+
+export interface DLQSource {
+  topic: string;
+  partition: number;
+  message: KafkaMessage;
+}
+
+export interface RetryDLQOptions {
+  producer: Producer;
+  maxRetries?: number;
+  baseBackoffMs?: number;
+}
+
+export async function processWithRetryAndDLQ(
+  source: DLQSource,
+  handler: () => Promise<void>,
+  opts: RetryDLQOptions,
+): Promise<{ ok: true } | { ok: false; sentToDLQ: true; error: unknown }> {
+  const maxRetries = opts.maxRetries ?? 3;
+  const baseBackoff = opts.baseBackoffMs ?? 200;
+
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await handler();
+      return { ok: true };
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, baseBackoff * Math.pow(2, attempt - 1)));
+      }
+    }
+  }
+
+  await sendToDLQ(opts.producer, source, lastError);
+  return { ok: false, sentToDLQ: true, error: lastError };
+}
+
+export async function sendToDLQ(
+  producer: Producer,
+  source: DLQSource,
+  error: unknown,
+): Promise<void> {
+  const { message, topic, partition } = source;
+  const reason = error instanceof Error ? `${error.message}\n${error.stack}` : String(error);
+  const dlqMessage = {
+    originalTopic: topic,
+    originalPartition: partition,
+    originalOffset: message.offset,
+    originalKey: message.key?.toString(),
+    originalValue: message.value?.toString(),
+    originalHeaders: headersToObject(message.headers),
+    reason,
+    timestamp: Date.now(),
+  };
+
+  await producer.send({
+    topic: TOPICS.DEAD_LETTER,
+    messages: [
+      {
+        key: message.key,
+        value: JSON.stringify(dlqMessage),
+        headers: {
+          originalTopic: Buffer.from(topic),
+          reason: Buffer.from(reason.slice(0, 500)),
+        },
+      },
+    ],
+  });
+}
+
+function headersToObject(headers: Record<string, any> | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!headers) return out;
+  for (const [k, v] of Object.entries(headers)) {
+    if (v == null) continue;
+    out[k] = Buffer.isBuffer(v) ? v.toString() : String(v);
+  }
+  return out;
 }
 
 export const TOPICS = {
@@ -71,4 +163,5 @@ export const TOPICS = {
   VALIDATED_EVENTS: "validated-events",
 } as const;
 
-export type { Kafka, Consumer, Producer, KafkaConfig };
+export type { Kafka, Consumer, Producer, KafkaConfig, EachMessagePayload };
+export { DLQEnvelopeSchema, type DLQEnvelope } from "@catalyst/types";

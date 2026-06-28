@@ -15,11 +15,7 @@
     "@catalyst/types": "workspace:*",
     "@types/geoip-lite": "^1.4.4",
     "geoip-lite": "^2.0.2",
-    "ioredis": "^5.10.1",
-    "kafkajs": "^2.2.4",
-    "pino": "^10.3.1",
-    "ua-parser-js": "^2.0.10",
-    "zod": "^4.4.3"
+    "ua-parser-js": "^2.0.10"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14"

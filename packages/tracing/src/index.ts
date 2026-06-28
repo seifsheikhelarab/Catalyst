@@ -1,4 +1,4 @@
-import { SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { resourceFromAttributes } from "@opentelemetry/resources";
@@ -7,6 +7,7 @@ import { trace, context, propagation, type Tracer, type Span, type Attributes, t
 import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
 
 let tracer: Tracer | null = null;
+let provider: NodeTracerProvider | null = null;
 
 export interface TracingOptions {
   serviceName: string;
@@ -20,14 +21,15 @@ export function initTracing(opts: TracingOptions): Tracer {
     url: opts.otlpEndpoint || process.env.OTEL_EXPORTER_OTLP_ENDPOINT || "http://localhost:4318/v1/traces",
   });
 
-  const provider = new NodeTracerProvider({
+  const newProvider = new NodeTracerProvider({
     resource: resourceFromAttributes({
       [ATTR_SERVICE_NAME]: opts.serviceName,
     }),
-    spanProcessors: [new SimpleSpanProcessor(exporter)],
+    spanProcessors: [new BatchSpanProcessor(exporter)],
   });
 
-  provider.register();
+  newProvider.register();
+  provider = newProvider;
 
   try {
     new HttpInstrumentation({});
@@ -35,6 +37,15 @@ export function initTracing(opts: TracingOptions): Tracer {
 
   tracer = trace.getTracer(opts.serviceName);
   return tracer;
+}
+
+export async function shutdownTracing(): Promise<void> {
+  if (provider) {
+    const p = provider;
+    provider = null;
+    tracer = null;
+    await p.shutdown();
+  }
 }
 
 export function getTracer(): Tracer {
@@ -46,13 +57,11 @@ export function startSpan(name: string, attrs?: Attributes, opts?: SpanOptions):
   return getTracer().startSpan(name, { attributes: attrs, ...opts });
 }
 
-export function injectTraceHeaders(headers: Record<string, string>): Record<string, string> {
+export function injectTraceHeaders(headers: Record<string, string> = {}): Record<string, string> {
   const carrier: Record<string, string> = {};
   propagation.inject(context.active(), carrier);
-  for (const [k, v] of Object.entries(carrier)) {
-    headers[k] = v;
-  }
-  return headers;
+  const merged: Record<string, string> = { ...headers, ...carrier };
+  return merged;
 }
 
 export function extractTraceFromHeaders(headers: Record<string, string | undefined>): Context | null {

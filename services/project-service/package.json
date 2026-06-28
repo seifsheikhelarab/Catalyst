@@ -11,11 +11,9 @@
     "@catalyst/metrics": "workspace:*",
     "@catalyst/redis": "workspace:*",
     "@catalyst/tracing": "workspace:*",
-    "@catalyst/types": "workspace:*",
     "bcrypt": "^6.0.0",
     "hono": "^4.12.22",
-    "pg": "^8.21.0",
-    "zod": "^4.4.3"
+    "pg": "^8.21.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

@@ -7,7 +7,7 @@
 
 ## Project Status
 
-Greenfield monorepo. Services exist but not yet tested. Phases 0–3 complete.
+Greenfield monorepo. Services exist but not yet tested. Phases 0–4 and 6–8 complete.
 
 ### Phase 0 - Complete
 
@@ -31,12 +31,42 @@ Greenfield monorepo. Services exist but not yet tested. Phases 0–3 complete.
 
 - `project-service`: Project CRUD, API key generation (bcrypt hashed), event schemas with Redis cache
 - `auth-service`: Register/login, JWT access (15min) + refresh (7d) tokens via jose, Redis revocation
-- `api-gateway`: Routes `/track` (API key), `/auth/*` (public), `/api/*` (JWT), `/projects/*` (both); Redis rate limiting per API key
+- `api-gateway`: Routes `/track` (API key), `/auth/*` (public), `/api/*` (JWT), `/projects/*`, `/admin/*` (JWT) → dlq-processor-service; Redis rate limiting per API key
 - Schema init: `scripts/init-phase3.sql`
 
 ### Phase 4 - Complete
 
 - `query-api-service`: REST endpoints for metrics (TimescaleDB), funnels + retention + users (ClickHouse), live (Redis); query caching with 30s TTL
+
+### Phase 5 - Complete
+
+- `api-gateway` proxies `WS /live?token=&projectId=` to `websocket-service` (after JWT verify)
+- `stream-processor` publishes 1-min bucket updates to Redis Pub/Sub `live:{projectId}`
+- `websocket-service` subscribes `live:*` and broadcasts to connected dashboards by room
+
+### Phase 6 - Complete
+
+- `packages/sdk`: Embeddable browser SDK with device ID, batched events (5s/20 events), retry with exponential backoff, `beforeunload` flush, `track`/`identify`/`page` methods
+
+### Phase 7 - Complete
+
+- `docker-compose.yml`: Added Jaeger, Prometheus, Grafana, Loki
+- `data/{prometheus,grafana,loki}/*`: Scrape configs + provisioned Grafana datasources and 12-panel pipeline overview dashboard
+- `@catalyst/tracing`: `BatchSpanProcessor`, `shutdownTracing()`; W3C `traceparent` propagated through Kafka headers across ingest → validation → enrichment → raw-storage / stream-processor
+- `@catalyst/logger`: `flushLogs()` for graceful shutdown
+- Kafka-only services (validation, enrichment, raw-storage, stream-processor) expose `/metrics` on dedicated ports
+
+### Phase 8 - Complete
+
+- `@catalyst/circuit-breaker`: opossum-based `createBreaker()` with fallback and metrics
+- `raw-storage-service`: ClickHouse inserts wrapped in breaker; buffer has max size (50k) with backpressure
+- `query-api-service`: ClickHouse queries wrapped in breaker; returns 503 with circuit state when open
+- `dlq-processor-service`: New service consumes DLQ, persists to PostgreSQL `dlq_events` table, exposes `GET /admin/dlq`, `GET /admin/dlq/:id`, `POST /admin/dlq/:id/retry`, `POST /admin/dlq/:id/discard`
+- `api-gateway` proxies `/admin/*` to dlq-processor-service (JWT required)
+- All consumers use `autoCommit: false` with `eachBatch` and manual `resolveOffset` + `commitOffsetsIfNecessary`
+- Retry-then-DLQ pattern (3x exponential backoff) in validation, enrichment, stream-processor
+- Schema init: `scripts/init-phase8.sql`
+- All services drain in-flight messages on SIGTERM (25s deadline)
 
 ## Architecture
 

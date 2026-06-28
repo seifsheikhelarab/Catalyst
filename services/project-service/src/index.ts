@@ -2,17 +2,18 @@ import { Hono } from "hono";
 import pg from "pg";
 import bcrypt from "bcrypt";
 import { connectRedis } from "@catalyst/redis";
-import { createLogger } from "@catalyst/logger";
+import { createLogger, flushLogs } from "@catalyst/logger";
 import crypto from "crypto";
-import { initTracing, startSpan } from "@catalyst/tracing";
+import { initTracing, startSpan, shutdownTracing } from "@catalyst/tracing";
 import { createCounter, metricsHandler } from "@catalyst/metrics";
+import type { RedisClient } from "@catalyst/redis";
 
 const { Pool } = pg;
 const logger = createLogger({ name: "project-service" });
 const requestsTotal = createCounter({ name: "project_requests_total", help: "Total project service requests" });
 
 const app = new Hono();
-let redis: any;
+let redis: RedisClient | null = null;
 let pool: pg.Pool;
 const SCHEMA_CACHE_TTL = 300;
 
@@ -29,6 +30,8 @@ async function shutdown() {
   logger.info("Shutting down...");
   await pool?.end();
   await redis?.quit();
+  await shutdownTracing();
+  await flushLogs();
   process.exit(0);
 }
 
