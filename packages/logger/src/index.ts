@@ -49,3 +49,7 @@ export async function flushLogs(): Promise<void> {
     await new Promise<void>((resolve, reject) => logger.flush((err) => err ? reject(err) : resolve()));
   }
 }
+
+export function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}

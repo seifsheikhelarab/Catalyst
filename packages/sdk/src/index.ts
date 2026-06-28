@@ -18,14 +18,7 @@ interface EventPayload {
 }
 
 function uuid(): string {
-  if (crypto.randomUUID) return crypto.randomUUID();
-  const hex = "0123456789abcdef";
-  let id = "";
-  for (let i = 0; i < 36; i++) {
-    if (i === 8 || i === 13 || i === 18 || i === 23) id += "-";
-    else id += hex[Math.floor(Math.random() * 16)];
-  }
-  return id;
+  return crypto.randomUUID();
 }
 
 function getDeviceId(): string {

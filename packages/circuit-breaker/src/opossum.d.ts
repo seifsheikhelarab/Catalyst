@@ -39,6 +39,7 @@ declare module "opossum" {
     enabled: boolean;
     closed: boolean;
     opened: boolean;
+    isOpen: boolean;
     halfOpen: boolean;
     warmUp: boolean;
     readonly name: string;

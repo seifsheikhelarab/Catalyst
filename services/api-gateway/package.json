@@ -11,7 +11,6 @@
     "@catalyst/metrics": "workspace:*",
     "@catalyst/redis": "workspace:*",
     "@catalyst/tracing": "workspace:*",
-    "@scalar/hono-api-reference": "0.5.167",
     "hono": "^4.12.22",
     "jose": "^6.2.3"
   },

@@ -1,5 +1,5 @@
 {
-  "name": "@catalyst/raw-storage-service",
+  "name": "@catalyst/management-service",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
@@ -7,15 +7,20 @@
     "start": "bun src/index.ts"
   },
   "dependencies": {
-    "@catalyst/circuit-breaker": "workspace:*",
     "@catalyst/kafka": "workspace:*",
     "@catalyst/logger": "workspace:*",
     "@catalyst/metrics": "workspace:*",
+    "@catalyst/redis": "workspace:*",
     "@catalyst/tracing": "workspace:*",
     "@catalyst/types": "workspace:*",
-    "clickhouse": "^2.6.0"
+    "bcrypt": "^6.0.0",
+    "hono": "^4.12.22",
+    "jose": "^6.2.3",
+    "pg": "^8.21.0"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.14"
+    "@types/bcrypt": "^6.0.0",
+    "@types/bun": "^1.3.14",
+    "@types/pg": "^8.20.0"
   }
 }

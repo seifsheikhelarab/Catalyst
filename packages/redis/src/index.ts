@@ -51,4 +51,4 @@ export async function disconnectRedis(): Promise<void> {
   }
 }
 
-export default { getRedis, connectRedis, disconnectRedis };
+

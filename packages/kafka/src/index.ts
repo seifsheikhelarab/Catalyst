@@ -82,37 +82,6 @@ export interface DLQSource {
   message: KafkaMessage;
 }
 
-export interface RetryDLQOptions {
-  producer: Producer;
-  maxRetries?: number;
-  baseBackoffMs?: number;
-}
-
-export async function processWithRetryAndDLQ(
-  source: DLQSource,
-  handler: () => Promise<void>,
-  opts: RetryDLQOptions,
-): Promise<{ ok: true } | { ok: false; sentToDLQ: true; error: unknown }> {
-  const maxRetries = opts.maxRetries ?? 3;
-  const baseBackoff = opts.baseBackoffMs ?? 200;
-
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      await handler();
-      return { ok: true };
-    } catch (err) {
-      lastError = err;
-      if (attempt < maxRetries) {
-        await new Promise((r) => setTimeout(r, baseBackoff * Math.pow(2, attempt - 1)));
-      }
-    }
-  }
-
-  await sendToDLQ(opts.producer, source, lastError);
-  return { ok: false, sentToDLQ: true, error: lastError };
-}
-
 export async function sendToDLQ(
   producer: Producer,
   source: DLQSource,
@@ -160,8 +129,7 @@ export const TOPICS = {
   DEAD_LETTER: "dead-letter-events",
   ENRICHED_EVENTS: "enriched-events",
   RAW_EVENTS: "raw-events",
-  VALIDATED_EVENTS: "validated-events",
 } as const;
 
-export type { Kafka, Consumer, Producer, KafkaConfig, EachMessagePayload };
+export type { Kafka, Consumer, Producer, KafkaConfig, EachMessagePayload, KafkaMessage };
 export { DLQEnvelopeSchema, type DLQEnvelope } from "@catalyst/types";

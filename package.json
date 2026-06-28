@@ -10,18 +10,14 @@
     "build": "bun build",
     "lint": "oxlint .",
     "fmt": "oxfmt .",
+    "typecheck": "tsc --noEmit",
     "start": "bun scripts/start-all.ts",
     "ingest": "bun run --cwd services/ingest-service src/index.ts",
-    "validate": "bun run --cwd services/validation-service src/index.ts",
-    "enrich": "bun run --cwd services/enrichment-service src/index.ts",
-    "raw-storage": "bun run --cwd services/raw-storage-service src/index.ts",
+    "validate-enrich": "bun run --cwd services/validate-enrich-service src/index.ts",
     "stream": "bun run --cwd services/stream-processor-service src/index.ts",
-    "project": "bun run --cwd services/project-service src/index.ts",
-    "auth": "bun run --cwd services/auth-service src/index.ts",
+    "management": "bun run --cwd services/management-service src/index.ts",
     "gateway": "bun run --cwd services/api-gateway src/index.ts",
-    "query-api": "bun run --cwd services/query-api-service src/index.ts",
-    "live": "bun run --cwd services/websocket-service src/index.ts",
-    "dlq": "bun run --cwd services/dlq-processor-service src/index.ts"
+    "query-api": "bun run --cwd services/query-api-service src/index.ts"
   },
   "engines": {
     "node": ">=20"

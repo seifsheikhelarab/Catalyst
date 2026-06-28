@@ -7,13 +7,10 @@
     "start": "bun src/index.ts"
   },
   "dependencies": {
-    "@catalyst/circuit-breaker": "workspace:*",
     "@catalyst/logger": "workspace:*",
     "@catalyst/metrics": "workspace:*",
     "@catalyst/redis": "workspace:*",
     "@catalyst/tracing": "workspace:*",
-    "@catalyst/types": "workspace:*",
-    "clickhouse": "^2.6.0",
     "hono": "^4.12.22",
     "ioredis": "^5.10.1",
     "jose": "^6.2.3",
