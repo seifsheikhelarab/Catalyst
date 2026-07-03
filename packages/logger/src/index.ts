@@ -23,6 +23,8 @@ export function createLogger(options: LoggerOptions = {}) {
     },
   };
 
+  const lokiHost = process.env.LOKI_HOST;
+
   let logger: pino.Logger;
   if (pretty) {
     logger = pino({
@@ -36,6 +38,22 @@ export function createLogger(options: LoggerOptions = {}) {
         },
       },
     });
+  } else if (lokiHost) {
+    const transport = pino.transport({
+      targets: [
+        { target: "pino/file", level },
+        {
+          target: "pino-loki",
+          level,
+          options: {
+            host: lokiHost,
+            labels: { service: name },
+            batching: { interval: 5, maxBufferSize: 100 },
+          },
+        },
+      ],
+    });
+    logger = pino(config, transport);
   } else {
     logger = pino(config);
   }

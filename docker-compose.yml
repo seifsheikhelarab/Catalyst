@@ -32,13 +32,13 @@ services:
       - "--web.enable-lifecycle"
     depends_on:
       jaeger:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 30s
 
   grafana:
     image: grafana/grafana:latest
@@ -63,7 +63,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 30s
 
   loki:
     image: grafana/loki:latest
@@ -80,7 +80,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 45s
 
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:latest
@@ -148,7 +148,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 60s
 
   db-init:
     image: timescale/timescaledb:latest-pg18
@@ -176,6 +176,7 @@ services:
       PORT: "3004"
       KAFKA_BROKER: redpanda:29092
       REDIS_HOST: redis
+      LOKI_HOST: http://loki:3100
     depends_on:
       redpanda: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -194,6 +195,7 @@ services:
       KAFKA_BROKER: redpanda:29092
       REDIS_HOST: redis
       MANAGEMENT_SERVICE_URL: http://management-service:3001
+      LOKI_HOST: http://loki:3100
     depends_on:
       redpanda: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -216,6 +218,7 @@ services:
       POSTGRES_USER: catalyst
       POSTGRES_PASSWORD: catalyst
       POSTGRES_DB: catalyst
+      LOKI_HOST: http://loki:3100
     depends_on:
       redpanda: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -239,6 +242,7 @@ services:
       POSTGRES_USER: catalyst
       POSTGRES_PASSWORD: catalyst
       POSTGRES_DB: catalyst
+      LOKI_HOST: http://loki:3100
     depends_on:
       redpanda: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -261,6 +265,7 @@ services:
       POSTGRES_PASSWORD: catalyst
       POSTGRES_DB: catalyst
       MANAGEMENT_SERVICE_URL: http://management-service:3001
+      LOKI_HOST: http://loki:3100
     depends_on:
       redis: { condition: service_healthy }
       db-init: { condition: service_completed_successfully }
@@ -281,6 +286,7 @@ services:
       MANAGEMENT_SERVICE_URL: http://management-service:3001
       INGEST_SERVICE_URL: http://ingest-service:3004
       QUERY_SERVICE_URL: http://query-api-service:3003
+      LOKI_HOST: http://loki:3100
     depends_on:
       redis: { condition: service_healthy }
       management-service: { condition: service_started }
