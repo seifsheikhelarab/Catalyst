@@ -44,17 +44,6 @@ docker compose up -d
 
 This starts Redpanda, Redis, TimescaleDB, and all 6 services. DB init scripts auto-apply.
 
-Run services individually (if infra is already up):
-
-```bash
-bun run ingest       # ingest-service
-bun run validate-enrich
-bun run stream
-bun run management
-bun run query-api
-bun run gateway
-```
-
 ## E2E Tests
 
 ```bash
