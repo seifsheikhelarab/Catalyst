@@ -10,11 +10,20 @@ import { createCounter, metricsHandler } from "@catalyst/metrics";
 
 const logger = createLogger({ name: "api-gateway" });
 
-const requestsTotal = createCounter({ name: "gateway_requests_total", help: "Total gateway requests" });
-const wsConnectionsTotal = createCounter({ name: "gateway_ws_connections_total", help: "Total WebSocket connections" });
+const requestsTotal = createCounter({
+  name: "gateway_requests_total",
+  help: "Total gateway requests",
+});
+const wsConnectionsTotal = createCounter({
+  name: "gateway_ws_connections_total",
+  help: "Total WebSocket connections",
+});
 
 type Variables = { userId: string; orgId: string };
-interface WSClient { projectId: string; token: string }
+interface WSClient {
+  projectId: string;
+  token: string;
+}
 
 const app = new Hono<{ Variables: Variables }>();
 let redis: RedisClient | null = null;
@@ -77,7 +86,10 @@ async function verifyJWT(token: string) {
   }
 }
 
-async function rateLimit(key: string, limit: number = RATE_LIMIT_MAX): Promise<{ allowed: boolean; remaining: number }> {
+async function rateLimit(
+  key: string,
+  limit: number = RATE_LIMIT_MAX,
+): Promise<{ allowed: boolean; remaining: number }> {
   const rclient = await getRedisClient();
   const now = Math.floor(Date.now() / 1000);
   const windowStart = Math.floor(now / RATE_LIMIT_WINDOW) * RATE_LIMIT_WINDOW;
@@ -94,18 +106,25 @@ async function rateLimit(key: string, limit: number = RATE_LIMIT_MAX): Promise<{
 app.post("/track", async (c) => {
   requestsTotal.inc();
   const auth = c.req.header("Authorization") || "";
-  if (!auth.startsWith("Bearer pk_live_")) return c.json({ error: "missing or invalid API key" }, 401);
+  if (!auth.startsWith("Bearer pk_live_"))
+    return c.json({ error: "missing or invalid API key" }, 401);
   const apiKey = auth.slice(7);
   const keyHash = crypto.createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
 
   const { allowed, remaining } = await rateLimit(`key:${keyHash}`, RATE_LIMIT_MAX);
   if (!allowed) return c.json({ error: "rate limit exceeded" }, 429);
 
-  const projectRes = await fetch(`${MANAGEMENT_SERVICE}/internal/keys/${apiKey}/validate`, { method: "POST" });
-  const projectData = await projectRes.json() as { valid: boolean; projectId?: string; orgId?: string };
+  const projectRes = await fetch(`${MANAGEMENT_SERVICE}/internal/keys/${apiKey}/validate`, {
+    method: "POST",
+  });
+  const projectData = (await projectRes.json()) as {
+    valid: boolean;
+    projectId?: string;
+    orgId?: string;
+  };
   if (!projectData.valid) return c.json({ error: "invalid API key" }, 401);
 
-  const body = await c.req.json() as Record<string, unknown>;
+  const body = (await c.req.json()) as Record<string, unknown>;
   body.projectId = projectData.projectId;
 
   const clientIp = c.req.header("X-Forwarded-For") || c.req.header("X-Real-IP") || "";
@@ -117,24 +136,48 @@ app.post("/track", async (c) => {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (clientIp) headers["X-Forwarded-For"] = clientIp;
 
-  const res = await fetch(`${INGEST_SERVICE}/track`, { method: "POST", headers, body: JSON.stringify(body) });
+  const res = await fetch(`${INGEST_SERVICE}/track`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
   const data = await res.json();
   const resp = c.json(data, res.status as ContentfulStatusCode);
   resp.headers.set("X-RateLimit-Remaining", String(remaining));
   return resp;
 });
 
-app.post("/auth/:path*", async (c) => {
+app.all("/auth/*", async (c) => {
   requestsTotal.inc();
   const path = c.req.path.slice("/auth".length);
+  const auth = c.req.header("Authorization") || "";
   const body = await c.req.text();
   const res = await fetch(`${MANAGEMENT_SERVICE}/auth${path}`, {
-    method: c.req.method, headers: { "Content-Type": "application/json" }, body: body || undefined,
+    method: c.req.method,
+    headers: { "Content-Type": "application/json", Authorization: auth },
+    body: body || undefined,
   });
   return c.json(await res.json(), res.status as ContentfulStatusCode);
 });
 
-app.post("/projects/:path*", async (c) => {
+app.post("/projects", async (c) => {
+  requestsTotal.inc();
+  const auth = c.req.header("Authorization") || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (token && !token.startsWith("pk_live_")) {
+    const payload = await verifyJWT(token);
+    if (!payload) return c.json({ error: "invalid token" }, 401);
+  }
+  const body = await c.req.text();
+  const res = await fetch(`${MANAGEMENT_SERVICE}/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: auth },
+    body: body || undefined,
+  });
+  return c.json(await res.json(), res.status as ContentfulStatusCode);
+});
+
+app.post("/projects/*", async (c) => {
   requestsTotal.inc();
   const path = c.req.path.slice("/projects".length);
   const auth = c.req.header("Authorization") || "";
@@ -145,17 +188,32 @@ app.post("/projects/:path*", async (c) => {
   }
   const body = await c.req.text();
   const res = await fetch(`${MANAGEMENT_SERVICE}/projects${path}`, {
-    method: c.req.method, headers: { "Content-Type": "application/json", Authorization: auth }, body: body || undefined,
+    method: c.req.method,
+    headers: { "Content-Type": "application/json", Authorization: auth },
+    body: body || undefined,
   });
   return c.json(await res.json(), res.status as ContentfulStatusCode);
 });
 
-app.get("/projects/:path*", async (c) => {
+app.get("/projects", async (c) => {
+  requestsTotal.inc();
+  const qs = c.req.url.includes("?") ? "?" + new URL(c.req.url).searchParams.toString() : "";
+  const auth = c.req.header("Authorization") || "";
+  const res = await fetch(`${MANAGEMENT_SERVICE}/projects${qs}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json", Authorization: auth },
+  });
+  return c.json(await res.json(), res.status as ContentfulStatusCode);
+});
+
+app.get("/projects/*", async (c) => {
   requestsTotal.inc();
   const path = c.req.path.slice("/projects".length);
+  const qs = c.req.url.includes("?") ? "?" + new URL(c.req.url).searchParams.toString() : "";
   const auth = c.req.header("Authorization") || "";
-  const res = await fetch(`${MANAGEMENT_SERVICE}/projects${path}`, {
-    method: "GET", headers: { "Content-Type": "application/json", Authorization: auth },
+  const res = await fetch(`${MANAGEMENT_SERVICE}/projects${path}${qs}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json", Authorization: auth },
   });
   return c.json(await res.json(), res.status as ContentfulStatusCode);
 });
@@ -172,13 +230,19 @@ app.use("/admin/*", async (c, next) => {
   await next();
 });
 
-app.all("/admin/:path*", async (c) => {
+app.all("/admin/*", async (c) => {
   requestsTotal.inc();
   const path = c.req.path.slice("/admin".length);
+  const qs = c.req.url.includes("?") ? "?" + new URL(c.req.url).searchParams.toString() : "";
   const body = ["GET", "HEAD"].includes(c.req.method) ? undefined : await c.req.text();
-  const res = await fetch(`${MANAGEMENT_SERVICE}/admin${path}`, {
+  const res = await fetch(`${MANAGEMENT_SERVICE}/admin${path}${qs}`, {
     method: c.req.method,
-    headers: { "Content-Type": "application/json", Authorization: c.req.header("Authorization") || "", "X-User-Id": c.var.userId || "", "X-Org-Id": c.var.orgId || "" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: c.req.header("Authorization") || "",
+      "X-User-Id": c.var.userId || "",
+      "X-Org-Id": c.var.orgId || "",
+    },
     body: body || undefined,
   });
   return c.json(await res.json(), res.status as ContentfulStatusCode);
@@ -203,7 +267,14 @@ app.get("/api/*", async (c) => {
   const orgId = c.var.orgId || "";
   const res = await fetch(
     `${QUERY_SERVICE}${path}${c.req.url.includes("?") ? "?" + new URL(c.req.url).searchParams.toString() : ""}`,
-    { method: "GET", headers: { Authorization: c.req.header("Authorization") || "", "X-User-Id": userId, "X-Org-Id": orgId } },
+    {
+      method: "GET",
+      headers: {
+        Authorization: c.req.header("Authorization") || "",
+        "X-User-Id": userId,
+        "X-Org-Id": orgId,
+      },
+    },
   );
   return c.json(await res.json(), res.status as ContentfulStatusCode);
 });
@@ -214,7 +285,13 @@ app.post("/api/*", async (c) => {
   const userId = c.var.userId || "";
   const orgId = c.var.orgId || "";
   const res = await fetch(`${QUERY_SERVICE}${path}`, {
-    method: "POST", headers: { "Content-Type": "application/json", Authorization: c.req.header("Authorization") || "", "X-User-Id": userId, "X-Org-Id": orgId },
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: c.req.header("Authorization") || "",
+      "X-User-Id": userId,
+      "X-Org-Id": orgId,
+    },
     body: await c.req.text(),
   });
   return c.json(await res.json(), res.status as ContentfulStatusCode);
@@ -249,16 +326,26 @@ async function start() {
         const projectId = url.searchParams.get("projectId");
 
         if (!token || !projectId) {
-          return new Response(JSON.stringify({ error: "token and projectId required" }), { status: 400, headers: { "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ error: "token and projectId required" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
         }
 
         const payload = await verifyJWT(token);
         if (!payload) {
-          return new Response(JSON.stringify({ error: "invalid token" }), { status: 401, headers: { "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ error: "invalid token" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          });
         }
 
         const upgraded = srv.upgrade(req, { data: { projectId, token } });
-        if (!upgraded) return new Response(JSON.stringify({ error: "upgrade failed" }), { status: 400, headers: { "Content-Type": "application/json" } });
+        if (!upgraded)
+          return new Response(JSON.stringify({ error: "upgrade failed" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
         return;
       }
 

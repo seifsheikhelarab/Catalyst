@@ -10,8 +10,15 @@ import type { RedisClient } from "@catalyst/redis";
 const { Pool } = pg;
 const logger = createLogger({ name: "query-api-service" });
 
-const queryTotal = createCounter({ name: "query_api_requests_total", help: "Total query API requests" });
-const queryDuration = createHistogram({ name: "query_api_duration_ms", help: "Query duration ms", buckets: [10, 25, 50, 100, 250, 500, 1000, 2500] });
+const queryTotal = createCounter({
+  name: "query_api_requests_total",
+  help: "Total query API requests",
+});
+const queryDuration = createHistogram({
+  name: "query_api_duration_ms",
+  help: "Query duration ms",
+  buckets: [10, 25, 50, 100, 250, 500, 1000, 2500],
+});
 const cacheHits = createCounter({ name: "query_api_cache_hits_total", help: "Cache hits" });
 
 type Variables = { orgId: string };
@@ -58,7 +65,7 @@ app.use("/projects/:id/*", async (c, next) => {
     try {
       const res = await fetch(`${MANAGEMENT_SERVICE}/projects/${projectId}`);
       if (!res.ok) return c.json({ error: "not found" }, 404);
-      const project = await res.json() as Record<string, unknown>;
+      const project = (await res.json()) as Record<string, unknown>;
       if (project.org_id !== orgId) return c.json({ error: "forbidden" }, 403);
       await rclient.setex(cacheKey, 300, String(project.org_id));
     } catch {
@@ -83,13 +90,22 @@ app.get("/projects/:id/metrics", async (c) => {
   const cacheKey = `query:${crypto.createHash("sha1").update(["metrics", projectId, event, from, to, granularity].join(":")).digest("hex")}`;
   const rclient = await getRedisClient();
   const cached = await rclient.get(cacheKey);
-  if (cached) { cacheHits.inc(); return c.json(JSON.parse(cached)); }
+  if (cached) {
+    cacheHits.inc();
+    return c.json(JSON.parse(cached));
+  }
 
   let trunc: string;
   switch (granularity) {
-    case "minute": trunc = "minute"; break;
-    case "day": trunc = "day"; break;
-    default: trunc = "hour"; break;
+    case "minute":
+      trunc = "minute";
+      break;
+    case "day":
+      trunc = "day";
+      break;
+    default:
+      trunc = "hour";
+      break;
   }
 
   try {
@@ -118,7 +134,11 @@ app.get("/projects/:id/funnels", async (c) => {
   if (!stepsParam) return c.json({ error: "steps required" }, 400);
 
   let steps: string[];
-  try { steps = JSON.parse(stepsParam); } catch { return c.json({ error: "steps must be a JSON array" }, 400); }
+  try {
+    steps = JSON.parse(stepsParam);
+  } catch {
+    return c.json({ error: "steps must be a JSON array" }, 400);
+  }
   if (steps.length < 2) return c.json({ error: "at least 2 steps required" }, 400);
 
   const windowSeconds = parseWindow(windowParam);
@@ -135,8 +155,18 @@ app.get("/projects/:id/funnels", async (c) => {
           AND b."timestamp" <= a."timestamp" + INTERVAL '${windowSeconds} seconds'
           AND a."timestamp" >= $4 AND a."timestamp" <= $5
       `;
-      const res = await pgPool.query(q, [projectId, steps[i], steps[i + 1], from || "2000-01-01", to || "2099-12-31"]);
-      result.push({ from: steps[i], to: steps[i + 1], users: parseInt(res.rows[0]?.users || "0", 10) });
+      const res = await pgPool.query(q, [
+        projectId,
+        steps[i],
+        steps[i + 1],
+        from || "2000-01-01",
+        to || "2099-12-31",
+      ]);
+      result.push({
+        from: steps[i],
+        to: steps[i + 1],
+        users: parseInt(res.rows[0]?.users || "0", 10),
+      });
     }
     queryTotal.inc();
     return c.json(result);
@@ -155,7 +185,8 @@ app.get("/projects/:id/retention", async (c) => {
   const to = c.req.query("to");
 
   if (!projectId) return c.json({ error: "projectId required" }, 400);
-  if (!cohortEvent || !returnEvent) return c.json({ error: "cohortEvent and returnEvent required" }, 400);
+  if (!cohortEvent || !returnEvent)
+    return c.json({ error: "cohortEvent and returnEvent required" }, 400);
 
   try {
     const q = `
@@ -177,14 +208,22 @@ app.get("/projects/:id/retention", async (c) => {
       GROUP BY cohort_week, return_week
       ORDER BY cohort_week, return_week
     `;
-    const res = await pgPool.query(q, [projectId, cohortEvent, from || "2000-01-01", to || "2099-12-31", returnEvent]);
+    const res = await pgPool.query(q, [
+      projectId,
+      cohortEvent,
+      from || "2000-01-01",
+      to || "2099-12-31",
+      returnEvent,
+    ]);
     const rows = res.rows;
 
     const cohorts: Map<string, Map<number, number>> = new Map();
     for (const row of rows) {
       const cw = String(row.cohort_week).slice(0, 10);
       const rw = String(row.return_week).slice(0, 10);
-      const weekDiff = Math.round((new Date(rw).getTime() - new Date(cw).getTime()) / (7 * 86400000));
+      const weekDiff = Math.round(
+        (new Date(rw).getTime() - new Date(cw).getTime()) / (7 * 86400000),
+      );
       if (!cohorts.has(cw)) cohorts.set(cw, new Map());
       cohorts.get(cw)!.set(weekDiff, parseInt(row.users, 10));
     }
@@ -281,11 +320,16 @@ function parseWindow(w: string): number {
   const n = parseInt(match[1], 10);
   if (n <= 0) return 604800;
   switch (match[2]) {
-    case "s": return n;
-    case "m": return n * 60;
-    case "h": return n * 3600;
-    case "d": return n * 86400;
-    default: return 604800;
+    case "s":
+      return n;
+    case "m":
+      return n * 60;
+    case "h":
+      return n * 3600;
+    case "d":
+      return n * 86400;
+    default:
+      return 604800;
   }
 }
 

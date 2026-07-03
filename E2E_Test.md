@@ -10,38 +10,93 @@ This starts Redpanda (Kafka), Redis, PostgreSQL/TimescaleDB, Jaeger, Prometheus,
 
 2. End-to-End Test Flow
 
-Step A — Register a user & create a project:
+### A — Registration & Auth
+
 ```bash
 # Register
 curl -X POST http://localhost:3000/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"password123"}'
 
-# Save the accessToken from the response
-TOKEN="..."
+# Save from response
+TOKEN="eyJ..."   # accessToken
+REFRESH="eyJ..." # refreshToken
 ORG_ID="..."
+USER_ID="..."
 
+# Login (alternative to register)
+# Refresh token
+curl -X POST http://localhost:3000/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refreshToken":"'$REFRESH'"}'
+
+# Get current user
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/auth/me
+
+# Logout
+curl -X POST http://localhost:3000/auth/logout \
+  -H "Content-Type: application/json" \
+  -d '{"refreshToken":"'$REFRESH'"}'
+```
+
+### B — Project & API Key Management
+
+```bash
 # Create a project
 curl -X POST http://localhost:3000/projects \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d "{\"name\":\"My App\",\"orgId\":\"$ORG_ID\"}"
 
-# Save the projectId
 PROJECT_ID="..."
+
+# Get project by ID
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/projects/$PROJECT_ID
+
+# List projects
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/projects?orgId=$ORG_ID
 
 # Create an API key
 curl -X POST http://localhost:3000/projects/$PROJECT_ID/keys \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN"
 
-# Save the raw API key (starts with pk_live_)
 API_KEY="pk_live_..."
+
+# List API keys
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/projects/$PROJECT_ID/keys
 ```
 
-Step B — Send test events through the pipeline:
+### C — Event Schema Management
+
 ```bash
-# Single event
+# Create a schema for an event
+curl -X POST http://localhost:3000/projects/$PROJECT_ID/schemas \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "eventName": "page_view",
+    "schema": {
+      "type": "object",
+      "required": ["url"],
+      "properties": {
+        "url": {"type": "string"},
+        "referrer": {"type": "string"}
+      }
+    }
+  }'
+
+# List schemas
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/projects/$PROJECT_ID/schemas
+
+# Get schema by event name
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/projects/$PROJECT_ID/schemas/page_view
+```
+
+### D — Event Pipeline (Track → Process → Store)
+
+```bash
+# Send a valid event through the gateway
 curl -X POST http://localhost:3000/track \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $API_KEY" \
@@ -56,54 +111,79 @@ curl -X POST http://localhost:3000/track \
   }'
 ```
 
-Step C — Verify at each pipeline stage:
+### E — Pipeline Verification
+
 ```bash
-# 1. Check Kafka topics via Redpanda Console
+# Check Kafka topics via Redpanda Console
 open http://localhost:8080
 
-# 2. Check raw events in TimescaleDB
+# Check raw events in TimescaleDB
 docker exec catalyst-postgres psql -U catalyst -d catalyst -c "SELECT count(*) FROM events"
 
-# 3. Check rollups in TimescaleDB
+# Check rollups
 docker exec catalyst-postgres psql -U catalyst -d catalyst -c "SELECT * FROM event_rollups ORDER BY bucket DESC LIMIT 10"
-
-# 4. Query API
-curl -H "Authorization: Bearer $TOKEN" "http://localhost:3000/api/projects/$PROJECT_ID/metrics?event=page_view&from=$(date -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)&to=$(date +%Y-%m-%dT%H:%M:%SZ)"
 ```
 
-Step D — Duplicate dedup test:
+### F — Query API
+
+```bash
+# Metrics
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:3000/api/projects/$PROJECT_ID/metrics?event=page_view&from=$(date -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)&to=$(date +%Y-%m-%dT%H:%M:%SZ)"
+
+# Funnels
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:3000/api/projects/$PROJECT_ID/funnels?steps=[\"page_view\",\"signup\"]&window=7d"
+
+# Retention
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:3000/api/projects/$PROJECT_ID/retention?cohortEvent=page_view&returnEvent=page_view&periods=4"
+
+# Users
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:3000/api/projects/$PROJECT_ID/users?limit=10"
+
+# Live counters
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:3000/api/projects/$PROJECT_ID/events/live"
+```
+
+### G — DLQ Flow
+
+```bash
+# Send invalid event (bypasses gateway validation)
+curl -s -X POST http://localhost:3004/track \
+  -H "Content-Type: application/json" \
+  -d '{"projectId":"bad","timestamp":1}' | jq .
+# → 202
+
+# List DLQ events
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:3000/admin/dlq"
+
+# Get DLQ event by ID
+DLQ_ID=1
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:3000/admin/dlq/$DLQ_ID"
+
+# Retry a DLQ event
+curl -X POST -H "Authorization: Bearer $TOKEN" "http://localhost:3000/admin/dlq/$DLQ_ID/retry"
+
+# Discard a DLQ event
+curl -X POST -H "Authorization: Bearer $TOKEN" "http://localhost:3000/admin/dlq/$DLQ_ID/discard"
+```
+
+### H — Duplicate Dedup
+
 ```bash
 # Send same event twice → second returns "duplicate"
 curl -s -X POST http://localhost:3000/track \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $API_KEY" \
   -d "{\"event\":\"test\",\"projectId\":\"$PROJECT_ID\",\"timestamp\":$(date +%s)000}" | jq .
-
 # → {"status":"duplicate"}
 ```
 
-Step E — Send invalid event (triggers DLQ):
-```bash
-# Missing required fields
-curl -s -X POST http://localhost:3000/track \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $API_KEY" \
-  -d '{"bad":"data"}' | jq .
+### I — WebSocket Live Updates
 
-# → 400 Bad Request
-
-# Send directly to ingest to bypass gateway validation
-curl -s -X POST http://localhost:3004/track \
-  -H "Content-Type: application/json" \
-  -d '{"projectId":"bad","timestamp":1}' | jq .
-
-# → 202 (bypasses API key check)
-
-# Then check DLQ
-curl -H "Authorization: Bearer $TOKEN" "http://localhost:3000/admin/dlq"
-```
-
-Step F — WebSocket live test:
 ```bash
 # Install wscat if needed
 npm install -g wscat

@@ -35,7 +35,20 @@ declare module "opossum" {
     constructor(fn: (...args: TArgs) => Promise<TResult> | TResult, options?: Options);
     fire(...args: TArgs): Promise<TResult>;
     fallback(fallbackFn: (...args: TArgs) => Promise<TResult> | TResult): this;
-    on(event: "open" | "close" | "halfOpen" | "reject" | "timeout" | "success" | "failure" | "fire" | "fallback" | "snapshot", handler: (...args: any[]) => void): this;
+    on(
+      event:
+        | "open"
+        | "close"
+        | "halfOpen"
+        | "reject"
+        | "timeout"
+        | "success"
+        | "failure"
+        | "fire"
+        | "fallback"
+        | "snapshot",
+      handler: (...args: any[]) => void,
+    ): this;
     enabled: boolean;
     closed: boolean;
     opened: boolean;
@@ -48,7 +61,9 @@ declare module "opossum" {
     shutdown(): void;
   }
 
-  export type AsyncFn<TArgs extends any[] = any[], TResult = any> = (...args: TArgs) => Promise<TResult>;
+  export type AsyncFn<TArgs extends any[] = any[], TResult = any> = (
+    ...args: TArgs
+  ) => Promise<TResult>;
 
   export default CircuitBreaker;
 }

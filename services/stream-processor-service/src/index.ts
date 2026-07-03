@@ -1,4 +1,11 @@
-import { getProducer, createConsumer, sendToDLQ, TOPICS, type Consumer, type Producer } from "@catalyst/kafka";
+import {
+  getProducer,
+  createConsumer,
+  sendToDLQ,
+  TOPICS,
+  type Consumer,
+  type Producer,
+} from "@catalyst/kafka";
 import { connectRedis } from "@catalyst/redis";
 import type { RedisClient } from "@catalyst/redis";
 import { type EnrichedEvent } from "@catalyst/types";
@@ -11,15 +18,44 @@ import pg from "pg";
 const { Pool } = pg;
 const logger = createLogger({ name: "stream-processor-service" });
 
-const eventsProcessed = createCounter({ name: "stream_events_processed_total", help: "Events processed for rollups" });
-const eventsStored = createCounter({ name: "stream_events_stored_total", help: "Raw events stored in TimescaleDB" });
-const eventsDropped = createCounter({ name: "stream_events_dropped_total", help: "Events dropped due to backpressure" });
-const eventsRetried = createCounter({ name: "stream_events_retried_total", help: "Events retried after transient failure" });
-const eventsDLQd = createCounter({ name: "stream_events_dlqd_total", help: "Events sent to DLQ after retries" });
-const rollupsFlushed = createCounter({ name: "stream_rollups_flushed_total", help: "Rollup batches flushed to TimescaleDB" });
-const bufferSize = createGauge({ name: "stream_buffer_size", help: "Current in-memory buffer size" });
-const processingLag = createHistogram({ name: "stream_processing_lag_ms", help: "Event processing lag ms", buckets: [10, 50, 100, 250, 500, 1000, 5000] });
-const insertDuration = createHistogram({ name: "stream_insert_duration_ms", help: "TimescaleDB insert duration ms", buckets: [50, 100, 250, 500, 1000, 2500, 5000] });
+const eventsProcessed = createCounter({
+  name: "stream_events_processed_total",
+  help: "Events processed for rollups",
+});
+const eventsStored = createCounter({
+  name: "stream_events_stored_total",
+  help: "Raw events stored in TimescaleDB",
+});
+const eventsDropped = createCounter({
+  name: "stream_events_dropped_total",
+  help: "Events dropped due to backpressure",
+});
+const eventsRetried = createCounter({
+  name: "stream_events_retried_total",
+  help: "Events retried after transient failure",
+});
+const eventsDLQd = createCounter({
+  name: "stream_events_dlqd_total",
+  help: "Events sent to DLQ after retries",
+});
+const rollupsFlushed = createCounter({
+  name: "stream_rollups_flushed_total",
+  help: "Rollup batches flushed to TimescaleDB",
+});
+const bufferSize = createGauge({
+  name: "stream_buffer_size",
+  help: "Current in-memory buffer size",
+});
+const processingLag = createHistogram({
+  name: "stream_processing_lag_ms",
+  help: "Event processing lag ms",
+  buckets: [10, 50, 100, 250, 500, 1000, 5000],
+});
+const insertDuration = createHistogram({
+  name: "stream_insert_duration_ms",
+  help: "TimescaleDB insert duration ms",
+  buckets: [50, 100, 250, 500, 1000, 2500, 5000],
+});
 
 const MAX_RETRIES = 3;
 const BASE_BACKOFF_MS = 200;
@@ -78,9 +114,12 @@ const insertBreaker = createBreaker(
       new Date(event.timestamp).toISOString(),
     ]);
 
-    const placeholders = values.map((_, i) =>
-      `($${i * 11 + 1}, $${i * 11 + 2}, $${i * 11 + 3}, $${i * 11 + 4}, $${i * 11 + 5}, $${i * 11 + 6}, $${i * 11 + 7}, $${i * 11 + 8}, $${i * 11 + 9}, $${i * 11 + 10}, $${i * 11 + 11})`
-    ).join(",");
+    const placeholders = values
+      .map(
+        (_, i) =>
+          `($${i * 11 + 1}, $${i * 11 + 2}, $${i * 11 + 3}, $${i * 11 + 4}, $${i * 11 + 5}, $${i * 11 + 6}, $${i * 11 + 7}, $${i * 11 + 8}, $${i * 11 + 9}, $${i * 11 + 10}, $${i * 11 + 11})`,
+      )
+      .join(",");
 
     const end = insertDuration.startTimer();
     await pgPool.query(
@@ -174,7 +213,13 @@ async function flushRollups() {
 
   const rolls: Map<string, { count: number; unique: number; ts: number }> = new Map();
 
-  const keyEntries: Array<{ key: string; projectId: string; event: string; ts: number; hllKey: string }> = [];
+  const keyEntries: Array<{
+    key: string;
+    projectId: string;
+    event: string;
+    ts: number;
+    hllKey: string;
+  }> = [];
 
   for (const key of keys) {
     const parts = key.split(":");
@@ -268,10 +313,21 @@ async function flushRollups() {
     for (const [key, { count, unique, ts }] of rolls) {
       const parts = key.split("|");
       const publishKey = `live:${parts[0]}`;
-      redis?.publish(
-        publishKey,
-        JSON.stringify({ type: "metric_update", projectId: parts[0], event: parts[1], count_1m: count, active_users: unique, timestamp: ts }),
-      ).catch((err: unknown) => { logger.error({ error: err }, "Failed to publish live update"); });
+      redis
+        ?.publish(
+          publishKey,
+          JSON.stringify({
+            type: "metric_update",
+            projectId: parts[0],
+            event: parts[1],
+            count_1m: count,
+            active_users: unique,
+            timestamp: ts,
+          }),
+        )
+        .catch((err: unknown) => {
+          logger.error({ error: err }, "Failed to publish live update");
+        });
     }
   } catch (err) {
     logger.error({ error: err }, "Failed to write rollups");
@@ -281,7 +337,10 @@ async function flushRollups() {
 async function shutdown() {
   if (draining) return;
   draining = true;
-  logger.info({ inFlight, bufferSize: eventBuffer.length }, "Shutting down stream-processor service...");
+  logger.info(
+    { inFlight, bufferSize: eventBuffer.length },
+    "Shutting down stream-processor service...",
+  );
 
   const deadline = Date.now() + 25_000;
   while (inFlight > 0 && Date.now() < deadline) await sleep(100);
@@ -322,7 +381,9 @@ async function start() {
     max: 10,
   });
 
-  rollupTimer = setInterval(() => { flushRollups().catch((err) => logger.error({ error: err }, "Rollup flush failed")); }, ROLLUP_INTERVAL_MS);
+  rollupTimer = setInterval(() => {
+    flushRollups().catch((err) => logger.error({ error: err }, "Rollup flush failed"));
+  }, ROLLUP_INTERVAL_MS);
 
   setInterval(() => {
     bufferSize.set(eventBuffer.length);
@@ -332,10 +393,20 @@ async function start() {
 
   await consumer.run({
     autoCommit: false,
-    eachBatch: async ({ batch, resolveOffset, commitOffsetsIfNecessary, heartbeat, isRunning, isStale }) => {
+    eachBatch: async ({
+      batch,
+      resolveOffset,
+      commitOffsetsIfNecessary,
+      heartbeat,
+      isRunning,
+      isStale,
+    }) => {
       for (const message of batch.messages) {
         if (!isRunning() || isStale()) break;
-        if (!message.value) { resolveOffset(message.offset); continue; }
+        if (!message.value) {
+          resolveOffset(message.offset);
+          continue;
+        }
 
         inFlight++;
         const startTime = Date.now();
@@ -363,7 +434,11 @@ async function start() {
           }
 
           if (lastErr) {
-            await sendToDLQ(producer, { topic: batch.topic, partition: batch.partition, message }, lastErr);
+            await sendToDLQ(
+              producer,
+              { topic: batch.topic, partition: batch.partition, message },
+              lastErr,
+            );
             eventsDLQd.inc();
             logger.error({ error: lastErr }, "Sent to DLQ after max retries");
             resolveOffset(message.offset);
@@ -390,9 +465,16 @@ async function start() {
           resolveOffset(message.offset);
           await heartbeat();
         } catch (err) {
-          logger.error({ error: err, offset: message.offset }, "Unrecoverable error, sending to DLQ");
+          logger.error(
+            { error: err, offset: message.offset },
+            "Unrecoverable error, sending to DLQ",
+          );
           try {
-            await sendToDLQ(producer, { topic: batch.topic, partition: batch.partition, message }, err);
+            await sendToDLQ(
+              producer,
+              { topic: batch.topic, partition: batch.partition, message },
+              err,
+            );
             eventsDLQd.inc();
           } catch (dlqErr) {
             logger.error({ error: dlqErr }, "Failed to send to DLQ");

@@ -1,9 +1,22 @@
-import { getKafka, getProducer, createConsumer, sendToDLQ, TOPICS, type Consumer, type Producer } from "@catalyst/kafka";
+import {
+  getKafka,
+  getProducer,
+  createConsumer,
+  sendToDLQ,
+  TOPICS,
+  type Consumer,
+  type Producer,
+} from "@catalyst/kafka";
 import { RawEventSchema, type RawEvent, type EnrichedEvent } from "@catalyst/types";
 import { createLogger, flushLogs, sleep } from "@catalyst/logger";
 import { connectRedis } from "@catalyst/redis";
 import type { RedisClient } from "@catalyst/redis";
-import { initTracing, startSpanWithTraceContext, injectTraceHeaders, shutdownTracing } from "@catalyst/tracing";
+import {
+  initTracing,
+  startSpanWithTraceContext,
+  injectTraceHeaders,
+  shutdownTracing,
+} from "@catalyst/tracing";
 import { createCounter, createHistogram, metricsHandler } from "@catalyst/metrics";
 import type { KafkaMessage } from "@catalyst/kafka";
 import crypto from "crypto";
@@ -12,8 +25,14 @@ import geoip from "geoip-lite";
 
 const logger = createLogger({ name: "validate-enrich-service" });
 
-const eventsValid = createCounter({ name: "ve_events_valid_total", help: "Events validated and enriched" });
-const eventsRejected = createCounter({ name: "ve_events_rejected_total", help: "Events rejected by schema" });
+const eventsValid = createCounter({
+  name: "ve_events_valid_total",
+  help: "Events validated and enriched",
+});
+const eventsRejected = createCounter({
+  name: "ve_events_rejected_total",
+  help: "Events rejected by schema",
+});
 const eventsDLQd = createCounter({ name: "ve_events_dlqd_total", help: "Events sent to DLQ" });
 const processingDuration = createHistogram({
   name: "ve_processing_duration_ms",
@@ -42,7 +61,10 @@ async function getRedisClient() {
   return redis;
 }
 
-async function getProjectSchema(projectId: string, eventName: string): Promise<Record<string, unknown> | null> {
+async function getProjectSchema(
+  projectId: string,
+  eventName: string,
+): Promise<Record<string, unknown> | null> {
   try {
     const rclient = await getRedisClient();
     const cacheKey = `schema:${projectId}:${eventName}`;
@@ -54,7 +76,7 @@ async function getProjectSchema(projectId: string, eventName: string): Promise<R
     const managementUrl = process.env.MANAGEMENT_SERVICE_URL || "http://localhost:3001";
     const res = await fetch(`${managementUrl}/projects/${projectId}/schemas/${eventName}`);
     if (!res.ok) return null;
-    const data = await res.json() as Record<string, unknown>;
+    const data = (await res.json()) as Record<string, unknown>;
     if (data && data.schema) {
       await rclient.setex(cacheKey, 300, JSON.stringify(data));
       return data.schema as Record<string, unknown>;
@@ -65,7 +87,10 @@ async function getProjectSchema(projectId: string, eventName: string): Promise<R
   }
 }
 
-function validateAgainstProjectSchema(schema: Record<string, unknown>, properties: Record<string, unknown> | undefined): string[] {
+function validateAgainstProjectSchema(
+  schema: Record<string, unknown>,
+  properties: Record<string, unknown> | undefined,
+): string[] {
   const errors: string[] = [];
   const schemaObj = schema as Record<string, unknown>;
   const required = schemaObj.required;
@@ -78,7 +103,9 @@ function validateAgainstProjectSchema(schema: Record<string, unknown>, propertie
   }
   const schemaProps = schemaObj.properties;
   if (schemaProps && typeof schemaProps === "object") {
-    for (const [field, fieldSchema] of Object.entries(schemaProps as Record<string, Record<string, unknown>>)) {
+    for (const [field, fieldSchema] of Object.entries(
+      schemaProps as Record<string, Record<string, unknown>>,
+    )) {
       if (properties && field in properties && fieldSchema.type) {
         const value = properties[field];
         switch (fieldSchema.type) {
@@ -174,7 +201,9 @@ async function processEvent(payload: Payload): Promise<void> {
     const rawEvent = JSON.parse(rawValue) as RawEvent;
     span.setAttribute("event.projectId", rawEvent.projectId ?? "unknown");
 
-    const { ip, userAgent, userId } = extractProperties(rawEvent as unknown as Record<string, unknown>);
+    const { ip, userAgent, userId } = extractProperties(
+      rawEvent as unknown as Record<string, unknown>,
+    );
 
     let country: string | undefined;
     let city: string | undefined;
@@ -191,7 +220,11 @@ async function processEvent(payload: Payload): Promise<void> {
     const validationResult = RawEventSchema.safeParse(rawEvent);
     if (!validationResult.success) {
       logger.warn({ traceId, errors: validationResult.error.issues }, "Event validation failed");
-      await sendToDLQ(producer, { topic, partition, message }, new Error(`Schema validation failed: ${JSON.stringify(validationResult.error.issues)}`));
+      await sendToDLQ(
+        producer,
+        { topic, partition, message },
+        new Error(`Schema validation failed: ${JSON.stringify(validationResult.error.issues)}`),
+      );
       eventsRejected.inc();
       return;
     }
@@ -202,7 +235,11 @@ async function processEvent(payload: Payload): Promise<void> {
       const projectErrors = validateAgainstProjectSchema(projectSchema, rawEvent.properties);
       if (projectErrors.length > 0) {
         logger.warn({ traceId, errors: projectErrors }, "Per-project schema validation failed");
-        await sendToDLQ(producer, { topic, partition, message }, new Error(`Project schema validation failed: ${JSON.stringify(projectErrors)}`));
+        await sendToDLQ(
+          producer,
+          { topic, partition, message },
+          new Error(`Project schema validation failed: ${JSON.stringify(projectErrors)}`),
+        );
         eventsRejected.inc();
         return;
       }
@@ -273,7 +310,14 @@ async function start() {
 
   await consumer.run({
     autoCommit: false,
-    eachBatch: async ({ batch, resolveOffset, commitOffsetsIfNecessary, heartbeat, isRunning, isStale }) => {
+    eachBatch: async ({
+      batch,
+      resolveOffset,
+      commitOffsetsIfNecessary,
+      heartbeat,
+      isRunning,
+      isStale,
+    }) => {
       for (const message of batch.messages) {
         if (!isRunning() || isStale()) break;
         inFlight++;

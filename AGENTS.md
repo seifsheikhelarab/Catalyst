@@ -16,7 +16,7 @@ Greenfield monorepo. Architecture consolidated from 11 services to 6.
 - **stream-processor-service** (metrics 9103): Consumes enriched-events, Redis counters + HLL, hourly rollups to TimescaleDB, raw event buffer to TimescaleDB events hypertable, Redis Pub/Sub live updates
 - **management-service** (port 3001): Auth (register/login/JWT), project CRUD + API keys, DLQ consumer + admin endpoints
 - **query-api-service** (port 3003): REST endpoints for metrics/rollups, funnels, retention, users (all via TimescaleDB), live counters via Redis
-- **api-gateway** (port 3000): Routes /track (API key), /auth/* /projects/* /admin/* /api/* (JWT), WS /live (JWT + direct Redis Pub/Sub broadcast), rate limiting
+- **api-gateway** (port 3000): Routes /track (API key), /auth/_ /projects/_ /admin/_ /api/_ (JWT), WS /live (JWT + direct Redis Pub/Sub broadcast), rate limiting
 
 ### Shared Packages
 

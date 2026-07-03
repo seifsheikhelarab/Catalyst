@@ -11,9 +11,19 @@ import crypto from "crypto";
 
 const logger = createLogger({ name: "ingest-service" });
 
-const eventsReceived = createCounter({ name: "ingest_events_received_total", help: "Total events received" });
-const eventsDeduped = createCounter({ name: "ingest_events_deduped_total", help: "Duplicate events rejected" });
-const publishLatency = createHistogram({ name: "ingest_kafka_publish_latency_ms", help: "Kafka publish latency ms", buckets: [5, 10, 25, 50, 100, 250, 500] });
+const eventsReceived = createCounter({
+  name: "ingest_events_received_total",
+  help: "Total events received",
+});
+const eventsDeduped = createCounter({
+  name: "ingest_events_deduped_total",
+  help: "Duplicate events rejected",
+});
+const publishLatency = createHistogram({
+  name: "ingest_kafka_publish_latency_ms",
+  help: "Kafka publish latency ms",
+  buckets: [5, 10, 25, 50, 100, 250, 500],
+});
 
 const INGRESS_TOPIC = TOPICS.RAW_EVENTS;
 const DEDUP_TTL = 60;
@@ -45,7 +55,10 @@ async function computeDedupKey(event: RawEvent): Promise<string> {
   return `dedup:${crypto.createHash("sha256").update(hashInput).digest("hex")}`;
 }
 
-async function processSingleEvent(eventData: Record<string, unknown>, clientIp: string): Promise<{ status: string; traceId?: string }> {
+async function processSingleEvent(
+  eventData: Record<string, unknown>,
+  clientIp: string,
+): Promise<{ status: string; traceId?: string }> {
   // Inject client IP from gateway if not already set
   if (clientIp) {
     const props = (eventData.properties ?? {}) as Record<string, unknown>;
@@ -61,7 +74,10 @@ async function processSingleEvent(eventData: Record<string, unknown>, clientIp: 
   }
 
   const event = parseResult.data as RawEvent;
-  const span = startSpan("ingest.publish", { "event.type": event.event, "project.id": event.projectId });
+  const span = startSpan("ingest.publish", {
+    "event.type": event.event,
+    "project.id": event.projectId,
+  });
   try {
     const redisClient = await getRedisClient();
     const dedupKey = await computeDedupKey(event);
@@ -91,9 +107,7 @@ async function processSingleEvent(eventData: Record<string, unknown>, clientIp: 
         {
           key: event.projectId,
           value: JSON.stringify(message),
-          headers: Object.fromEntries(
-            Object.entries(headers).map(([k, v]) => [k, Buffer.from(v)]),
-          ),
+          headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, Buffer.from(v)])),
         },
       ],
     });
@@ -142,7 +156,10 @@ app.post("/track", async (c) => {
   } catch (err) {
     if (err && typeof err === "object" && "status" in err) {
       const apiErr = err as { status: number; error: string; details?: unknown };
-      return c.json({ error: apiErr.error, details: apiErr.details }, apiErr.status as ContentfulStatusCode);
+      return c.json(
+        { error: apiErr.error, details: apiErr.details },
+        apiErr.status as ContentfulStatusCode,
+      );
     }
     throw err;
   }

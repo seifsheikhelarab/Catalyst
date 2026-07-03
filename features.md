@@ -142,11 +142,13 @@
 ## Shared Packages
 
 ### @catalyst/types
+
 - **Zod Schemas** — Type-safe schemas for all Kafka message types: RawEvent, ValidatedEvent, EnrichedEvent, DeadLetterEvent, DLQEnvelope
 - **Domain Schemas** — Project, User, ApiKey, EventSchemaDefinition with Zod validation
 - **Reusable Types** — Inferred TypeScript types exported alongside schemas
 
 ### @catalyst/kafka
+
 - **Kafka Client Singleton** — Lazily initialized Kafka instance with configurable brokers, SSL, SASL
 - **Producer Management** — Singleton producer with LegacyPartitioner, lazy connect
 - **Consumer Factory** — Configurable consumer with session timeout and heartbeat interval
@@ -155,20 +157,24 @@
 - **Header Serialization** — Converts Kafka message headers to plain objects and back
 
 ### @catalyst/redis
+
 - **Redis Client Singleton** — Singleton Redis (ioredis) with lazy connect, configurable host/port/password/db
 - **Connection Management** — Explicit connect/disconnect, error logging, max retry config
 
 ### @catalyst/logger
+
 - **Structured Logging** — Pino-based logger with JSON output in production, pretty-printing in development
 - **Global Log Flush** — `flushLogs()` drains all logger instances (essential for graceful shutdown)
 - **Configurable** — Service name, log level, pretty-print toggle
 
 ### @catalyst/metrics
+
 - **Prometheus Registry** — Shared registry across all services
 - **Metric Factories** — Counter, Gauge, Histogram creation with auto-registration
 - **Metrics Handler** — `metricsHandler()` returns Prometheus-formatted response for `/metrics` endpoints
 
 ### @catalyst/tracing
+
 - **OpenTelemetry Setup** — NodeTracerProvider with BatchSpanProcessor (efficient async export)
 - **OTLP Export** — Sends traces to Jaeger via OTLP/protobuf
 - **W3C Trace Context** — Full `traceparent` propagation via `injectTraceHeaders()` and `extractTraceFromHeaders()`
@@ -177,6 +183,7 @@
 - **Graceful Shutdown** — `shutdownTracing()` flushes and shuts down provider
 
 ### @catalyst/circuit-breaker
+
 - **Opossum Wrapper** — `createBreaker()` with configurable timeout, error threshold, reset timeout, volume threshold
 - **Fallback Support** — Optional fallback function called when circuit is open
 - **State Tracking** — TrackedBreaker class with `isOpen`, `state`, `stats` getters
@@ -184,6 +191,7 @@
 - **Metrics Friendly** — Gauges can poll `isOpen` for Prometheus reporting
 
 ### @catalyst/sdk (Browser SDK)
+
 - **Analytics Class** — Embeddable SDK with simple API: `track()`, `identify()`, `page()`
 - **Anonymous Device ID** — Auto-generated UUID persisted in localStorage
 - **Event Batching** — Buffers events and flushes every 5 seconds or when batch reaches 20 events
@@ -197,12 +205,14 @@
 ## Observability
 
 ### Distributed Tracing (Jaeger)
+
 - **End-to-End Trace Propagation** — W3C traceparent propagated through Kafka headers across all 5 pipeline stages: Ingest → Validation → Enrichment → Raw-Storage / Stream-Processor
 - **BatchSpanProcessor** — Efficient async span export (batches spans before sending)
 - **OTLP Protocol** — Standard OpenTelemetry protocol to Jaeger
 - **HTTP Auto-Instrumentation** — All HTTP calls automatically captured in traces
 
 ### Metrics (Prometheus + Grafana)
+
 - **Per-Service Metrics** — Every service exposes a `/metrics` endpoint
 - **Service-Specific Metrics**:
   - Gateway: request count, WebSocket connection count
@@ -221,12 +231,14 @@
 - **Provisioned Datasources** — Prometheus, Loki, Jaeger auto-configured in Grafana
 
 ### Logging (Pino + Loki)
+
 - **Structured JSON** — All logs include service name, traceId, level, projectId
 - **Pretty-Printing** — Colorized output in development, JSON in production
 - **Global Flush** — `flushLogs()` drains all loggers before shutdown
 - **Loki Integration** — Grafana Loki configured for log aggregation
 
 ### Infrastructure Monitoring
+
 - **Docker Health Checks** — All containers (Redpanda, Redis, PostgreSQL, ClickHouse, Jaeger, Prometheus, Grafana, Loki) have health checks with retries and start periods
 - **Redpanda Admin API** — Exposes cluster health on port 9644
 
@@ -235,6 +247,7 @@
 ## Infrastructure & DevOps
 
 ### Docker Compose (11 Containers)
+
 - **Redpanda** — Kafka-compatible message broker (no JVM, fast startup) with console UI
 - **Redis** — In-memory cache with AOF persistence
 - **TimescaleDB** — PostgreSQL with TimescaleDB extension for time-series hypertables
@@ -249,12 +262,14 @@
 - **Resource Limits** — Memory limits, ulimit configs for ClickHouse
 
 ### Database Schema Initialization (4 SQL Scripts)
+
 - **init-clickhouse.sql** — Creates `events` MergeTree table with 90-day TTL, partitioned by month
 - **init-timescaledb.sql** — Creates `event_rollups` hypertable with indexes on project and event
 - **init-phase3.sql** — Creates `orgs`, `users`, `projects`, `api_keys`, `event_schemas` tables with constraints, indexes, and cascading deletes
 - **init-phase8.sql** — Creates `dlq_events` table with status tracking, retry counting, and performance indexes
 
 ### Container Management
+
 - **Health Check Chains** — Grafana waits for Prometheus+Loki, Prometheus waits for Jaeger, services wait for Kafka/Redis/DB
 - **Lifecycle Management** — `docker compose up` starts all infrastructure with proper dependency ordering
 
@@ -279,12 +294,14 @@
 ## Data Pipeline
 
 ### Kafka Topics
+
 ```
 raw-events → validated-events → enriched-events → (stream-processor / raw-storage)
                                           ↳ dead-letter-events
 ```
 
 ### Pipeline Stages
+
 1. **Ingest** — HTTP → minimal validation → dedup → Kafka (raw-events)
 2. **Validate** — Zod schema check → valid → Kafka (validated-events), invalid → DLQ
 3. **Enrich** — GeoIP lookup + UA parsing + session stitching → Kafka (enriched-events)
@@ -292,6 +309,7 @@ raw-events → validated-events → enriched-events → (stream-processor / raw-
 5. **Stream** — Redis counters + HyperLogLog + TimescaleDB rollups + live Pub/Sub
 
 ### Data Flow
+
 ```
 Client SDK → API Gateway → Ingest → [Kafka] → Validate → [Kafka] → Enrich → [Kafka]
                                                                            ↓
@@ -309,27 +327,27 @@ Client SDK → API Gateway → Ingest → [Kafka] → Validate → [Kafka] → E
 
 ## Tech Stack
 
-| Category            | Technology                                  |
-| ------------------- | ------------------------------------------- |
-| Runtime             | TypeScript / Bun                            |
-| Message Broker      | Kafka (Redpanda locally)                    |
-| Cache               | Redis (ioredis)                             |
-| Time-Series DB      | TimescaleDB (PostgreSQL extension)          |
-| OLAP                | ClickHouse                                  |
-| Relational DB       | PostgreSQL                                  |
-| HTTP Framework      | Hono                                        |
-| Auth                | jose (JWT), bcrypt                          |
-| Validation          | Zod                                         |
-| Tracing             | OpenTelemetry + Jaeger                      |
-| Metrics             | Prometheus client + Grafana                 |
-| Logging             | Pino + Loki                                 |
-| Circuit Breaker     | opossum                                     |
-| GeoIP               | MaxMind GeoLite2 (geoip-lite)               |
-| UA Parsing          | ua-parser-js                                |
-| API Documentation   | Scalar (OpenAPI 3.0)                        |
-| Package Manager     | Bun workspaces (monorepo)                   |
-| Linting/Formatting  | oxlint / oxfmt                              |
-| Containerization    | Docker Compose                              |
+| Category           | Technology                         |
+| ------------------ | ---------------------------------- |
+| Runtime            | TypeScript / Bun                   |
+| Message Broker     | Kafka (Redpanda locally)           |
+| Cache              | Redis (ioredis)                    |
+| Time-Series DB     | TimescaleDB (PostgreSQL extension) |
+| OLAP               | ClickHouse                         |
+| Relational DB      | PostgreSQL                         |
+| HTTP Framework     | Hono                               |
+| Auth               | jose (JWT), bcrypt                 |
+| Validation         | Zod                                |
+| Tracing            | OpenTelemetry + Jaeger             |
+| Metrics            | Prometheus client + Grafana        |
+| Logging            | Pino + Loki                        |
+| Circuit Breaker    | opossum                            |
+| GeoIP              | MaxMind GeoLite2 (geoip-lite)      |
+| UA Parsing         | ua-parser-js                       |
+| API Documentation  | Scalar (OpenAPI 3.0)               |
+| Package Manager    | Bun workspaces (monorepo)          |
+| Linting/Formatting | oxlint / oxfmt                     |
+| Containerization   | Docker Compose                     |
 
 ---
 

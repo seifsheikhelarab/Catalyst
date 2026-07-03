@@ -49,10 +49,16 @@ export async function connectRedis(options: RedisOptions = {}): Promise<Redis> {
 export async function connectNewRedis(options: RedisOptions = {}): Promise<Redis> {
   const config = { ...defaultOptions, ...options };
   const client = new Redis({
-    host: config.host, port: config.port, password: config.password, db: config.db,
-    maxRetriesPerRequest: 3, lazyConnect: true,
+    host: config.host,
+    port: config.port,
+    password: config.password,
+    db: config.db,
+    maxRetriesPerRequest: 3,
+    lazyConnect: true,
   });
-  client.on("error", (err) => { console.error("Redis connection error:", err); });
+  client.on("error", (err) => {
+    console.error("Redis connection error:", err);
+  });
   await client.connect();
   return client;
 }
@@ -63,5 +69,3 @@ export async function disconnectRedis(): Promise<void> {
     redisInstance = null;
   }
 }
-
-

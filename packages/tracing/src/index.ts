@@ -3,7 +3,16 @@ import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
-import { trace, context, propagation, type Tracer, type Span, type Attributes, type SpanOptions, type Context } from "@opentelemetry/api";
+import {
+  trace,
+  context,
+  propagation,
+  type Tracer,
+  type Span,
+  type Attributes,
+  type SpanOptions,
+  type Context,
+} from "@opentelemetry/api";
 import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
 
 let tracer: Tracer | null = null;
@@ -18,7 +27,10 @@ export function initTracing(opts: TracingOptions): Tracer {
   if (tracer) return tracer;
 
   const exporter = new OTLPTraceExporter({
-    url: opts.otlpEndpoint || process.env.OTEL_EXPORTER_OTLP_ENDPOINT || "http://localhost:4318/v1/traces",
+    url:
+      opts.otlpEndpoint ||
+      process.env.OTEL_EXPORTER_OTLP_ENDPOINT ||
+      "http://localhost:4318/v1/traces",
   });
 
   const newProvider = new NodeTracerProvider({
@@ -64,7 +76,9 @@ export function injectTraceHeaders(headers: Record<string, string> = {}): Record
   return merged;
 }
 
-export function extractTraceFromHeaders(headers: Record<string, string | undefined>): Context | null {
+export function extractTraceFromHeaders(
+  headers: Record<string, string | undefined>,
+): Context | null {
   const carrier: Record<string, string> = {};
   for (const [k, v] of Object.entries(headers)) {
     if (v) carrier[k] = v;

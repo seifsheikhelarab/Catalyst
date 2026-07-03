@@ -5,7 +5,15 @@ import { SignJWT, jwtVerify } from "jose";
 import { connectRedis } from "@catalyst/redis";
 import type { RedisClient } from "@catalyst/redis";
 import { createLogger, flushLogs, sleep } from "@catalyst/logger";
-import { getKafka, getProducer, createConsumer, TOPICS, type Consumer, type Producer, DLQEnvelopeSchema } from "@catalyst/kafka";
+import {
+  getKafka,
+  getProducer,
+  createConsumer,
+  TOPICS,
+  type Consumer,
+  type Producer,
+  DLQEnvelopeSchema,
+} from "@catalyst/kafka";
 import type { DLQEnvelope } from "@catalyst/types";
 import { initTracing, startSpan, shutdownTracing } from "@catalyst/tracing";
 import { createCounter, metricsHandler } from "@catalyst/metrics";
@@ -15,12 +23,27 @@ import crypto from "crypto";
 const { Pool } = pg;
 const logger = createLogger({ name: "management-service" });
 
-const requestsTotal = createCounter({ name: "mgmt_requests_total", help: "Total management service requests" });
+const requestsTotal = createCounter({
+  name: "mgmt_requests_total",
+  help: "Total management service requests",
+});
 const loginSuccess = createCounter({ name: "mgmt_login_success_total", help: "Successful logins" });
-const loginFailed = createCounter({ name: "mgmt_login_failed_total", help: "Failed login attempts" });
-const dlqEventsStored = createCounter({ name: "mgmt_dlq_events_stored_total", help: "DLQ events persisted" });
-const retriesRequested = createCounter({ name: "mgmt_dlq_retries_requested_total", help: "DLQ retries requested" });
-const retriesFailed = createCounter({ name: "mgmt_dlq_retries_failed_total", help: "DLQ retries that failed to republish" });
+const loginFailed = createCounter({
+  name: "mgmt_login_failed_total",
+  help: "Failed login attempts",
+});
+const dlqEventsStored = createCounter({
+  name: "mgmt_dlq_events_stored_total",
+  help: "DLQ events persisted",
+});
+const retriesRequested = createCounter({
+  name: "mgmt_dlq_retries_requested_total",
+  help: "DLQ retries requested",
+});
+const retriesFailed = createCounter({
+  name: "mgmt_dlq_retries_failed_total",
+  help: "DLQ retries that failed to republish",
+});
 
 const ACCESS_TOKEN_TTL = 15 * 60;
 const REFRESH_TOKEN_TTL = 7 * 24 * 60 * 60;
@@ -51,7 +74,10 @@ async function getRedisClient() {
   return redis;
 }
 
-async function signToken(payload: { sub: string; orgId: string; type: "access" | "refresh" }, expiresIn: number) {
+async function signToken(
+  payload: { sub: string; orgId: string; type: "access" | "refresh" },
+  expiresIn: number,
+) {
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -82,18 +108,33 @@ app.post("/auth/register", async (c) => {
   const client = await getClient();
   try {
     await client.query("BEGIN");
-    await client.query("INSERT INTO orgs (id, name) VALUES ($1, $2)", [orgId, orgName || email.split("@")[0]]);
-    await client.query("INSERT INTO users (id, org_id, email, password_hash) VALUES ($1, $2, $3, $4)", [userId, orgId, email, passwordHash]);
+    await client.query("INSERT INTO orgs (id, name) VALUES ($1, $2)", [
+      orgId,
+      orgName || email.split("@")[0],
+    ]);
+    await client.query(
+      "INSERT INTO users (id, org_id, email, password_hash) VALUES ($1, $2, $3, $4)",
+      [userId, orgId, email, passwordHash],
+    );
     await client.query("COMMIT");
 
     const accessToken = await signToken({ sub: userId, orgId, type: "access" }, ACCESS_TOKEN_TTL);
-    const refreshToken = await signToken({ sub: userId, orgId, type: "refresh" }, REFRESH_TOKEN_TTL);
+    const refreshToken = await signToken(
+      { sub: userId, orgId, type: "refresh" },
+      REFRESH_TOKEN_TTL,
+    );
     const rclient = await getRedisClient();
     await rclient.setex(`refresh:${refreshToken}`, REFRESH_TOKEN_TTL, userId);
     return c.json({ accessToken, refreshToken, user: { id: userId, email, orgId } }, 201);
   } catch (err) {
     await client.query("ROLLBACK");
-    if (err && typeof err === "object" && "code" in err && (err as Record<string, unknown>).code === "23505") return c.json({ error: "email already exists" }, 409);
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as Record<string, unknown>).code === "23505"
+    )
+      return c.json({ error: "email already exists" }, 409);
     return c.json({ error: "registration failed" }, 500);
   } finally {
     client.release();
@@ -108,18 +149,37 @@ app.post("/auth/login", async (c) => {
 
   const client = await getClient();
   try {
-    const result = await client.query("SELECT id, org_id, email, password_hash FROM users WHERE email = $1", [email]);
-    if (result.rows.length === 0) { loginFailed.inc(); return c.json({ error: "invalid credentials" }, 401); }
+    const result = await client.query(
+      "SELECT id, org_id, email, password_hash FROM users WHERE email = $1",
+      [email],
+    );
+    if (result.rows.length === 0) {
+      loginFailed.inc();
+      return c.json({ error: "invalid credentials" }, 401);
+    }
     const user = result.rows[0];
     const match = await bcrypt.compare(password, user.password_hash);
-    if (!match) { loginFailed.inc(); return c.json({ error: "invalid credentials" }, 401); }
+    if (!match) {
+      loginFailed.inc();
+      return c.json({ error: "invalid credentials" }, 401);
+    }
     loginSuccess.inc();
 
-    const accessToken = await signToken({ sub: user.id, orgId: user.org_id, type: "access" }, ACCESS_TOKEN_TTL);
-    const refreshToken = await signToken({ sub: user.id, orgId: user.org_id, type: "refresh" }, REFRESH_TOKEN_TTL);
+    const accessToken = await signToken(
+      { sub: user.id, orgId: user.org_id, type: "access" },
+      ACCESS_TOKEN_TTL,
+    );
+    const refreshToken = await signToken(
+      { sub: user.id, orgId: user.org_id, type: "refresh" },
+      REFRESH_TOKEN_TTL,
+    );
     const rclient = await getRedisClient();
     await rclient.setex(`refresh:${refreshToken}`, REFRESH_TOKEN_TTL, user.id);
-    return c.json({ accessToken, refreshToken, user: { id: user.id, email: user.email, orgId: user.org_id } });
+    return c.json({
+      accessToken,
+      refreshToken,
+      user: { id: user.id, email: user.email, orgId: user.org_id },
+    });
   } finally {
     client.release();
   }
@@ -132,15 +192,22 @@ app.post("/auth/refresh", async (c) => {
   if (!refreshToken) return c.json({ error: "refresh token required" }, 400);
 
   const payload = await verifyToken(refreshToken);
-  if (!payload || payload.type !== "refresh") return c.json({ error: "invalid refresh token" }, 401);
+  if (!payload || payload.type !== "refresh")
+    return c.json({ error: "invalid refresh token" }, 401);
 
   const rclient = await getRedisClient();
   const stored = await rclient.get(`refresh:${refreshToken}`);
   if (!stored || stored !== payload.sub) return c.json({ error: "token revoked" }, 401);
 
   await rclient.del(`refresh:${refreshToken}`);
-  const newAccessToken = await signToken({ sub: payload.sub as string, orgId: payload.orgId as string, type: "access" }, ACCESS_TOKEN_TTL);
-  const newRefreshToken = await signToken({ sub: payload.sub as string, orgId: payload.orgId as string, type: "refresh" }, REFRESH_TOKEN_TTL);
+  const newAccessToken = await signToken(
+    { sub: payload.sub as string, orgId: payload.orgId as string, type: "access" },
+    ACCESS_TOKEN_TTL,
+  );
+  const newRefreshToken = await signToken(
+    { sub: payload.sub as string, orgId: payload.orgId as string, type: "refresh" },
+    REFRESH_TOKEN_TTL,
+  );
   await rclient.setex(`refresh:${newRefreshToken}`, REFRESH_TOKEN_TTL, payload.sub as string);
   return c.json({ accessToken: newAccessToken, refreshToken: newRefreshToken });
 });
@@ -155,7 +222,9 @@ app.get("/auth/me", async (c) => {
 
   const client = await getClient();
   try {
-    const result = await client.query("SELECT id, org_id, email FROM users WHERE id = $1", [payload.sub]);
+    const result = await client.query("SELECT id, org_id, email FROM users WHERE id = $1", [
+      payload.sub,
+    ]);
     if (result.rows.length === 0) return c.json({ error: "user not found" }, 404);
     return c.json(result.rows[0]);
   } finally {
@@ -206,7 +275,10 @@ app.post("/projects", async (c) => {
   if (!name || !orgId) return c.json({ error: "name and orgId required" }, 400);
   const client = await getClient();
   try {
-    const result = await client.query("INSERT INTO projects (name, org_id) VALUES ($1, $2) RETURNING *", [name, orgId]);
+    const result = await client.query(
+      "INSERT INTO projects (name, org_id) VALUES ($1, $2) RETURNING *",
+      [name, orgId],
+    );
     return c.json(result.rows[0], 201);
   } finally {
     client.release();
@@ -232,7 +304,9 @@ app.get("/projects", async (c) => {
   const client = await getClient();
   try {
     const result = orgId
-      ? await client.query("SELECT * FROM projects WHERE org_id = $1 ORDER BY created_at DESC", [orgId])
+      ? await client.query("SELECT * FROM projects WHERE org_id = $1 ORDER BY created_at DESC", [
+          orgId,
+        ])
       : await client.query("SELECT * FROM projects ORDER BY created_at DESC");
     return c.json(result.rows);
   } finally {
@@ -254,7 +328,10 @@ app.post("/projects/:id/keys", async (c) => {
       "INSERT INTO api_keys (project_id, key_hash, key_prefix, name) VALUES ($1, $2, $3, $4) RETURNING id, created_at",
       [projectId, hash, prefix, name],
     );
-    return c.json({ key: rawKey, id: result.rows[0].id, name, createdAt: result.rows[0].created_at }, 201);
+    return c.json(
+      { key: rawKey, id: result.rows[0].id, name, createdAt: result.rows[0].created_at },
+      201,
+    );
   } finally {
     client.release();
   }
@@ -265,7 +342,10 @@ app.get("/projects/:id/keys", async (c) => {
   const projectId = c.req.param("id");
   const client = await getClient();
   try {
-    const result = await client.query("SELECT id, name, created_at, expires_at FROM api_keys WHERE project_id = $1", [projectId]);
+    const result = await client.query(
+      "SELECT id, name, created_at, expires_at FROM api_keys WHERE project_id = $1",
+      [projectId],
+    );
     return c.json(result.rows);
   } finally {
     client.release();
@@ -297,7 +377,9 @@ app.get("/projects/:id/schemas", async (c) => {
   const projectId = c.req.param("id");
   const client = await getClient();
   try {
-    const result = await client.query("SELECT * FROM event_schemas WHERE project_id = $1", [projectId]);
+    const result = await client.query("SELECT * FROM event_schemas WHERE project_id = $1", [
+      projectId,
+    ]);
     return c.json(result.rows);
   } finally {
     client.release();
@@ -314,7 +396,10 @@ app.get("/projects/:id/schemas/:eventName", async (c) => {
   if (cached) return c.json(JSON.parse(cached));
   const client = await getClient();
   try {
-    const result = await client.query("SELECT * FROM event_schemas WHERE project_id = $1 AND event_name = $2", [projectId, eventName]);
+    const result = await client.query(
+      "SELECT * FROM event_schemas WHERE project_id = $1 AND event_name = $2",
+      [projectId, eventName],
+    );
     if (result.rows.length === 0) return c.json({ error: "not found" }, 404);
     const schema = result.rows[0];
     await rclient.setex(cacheKey, SCHEMA_CACHE_TTL, JSON.stringify(schema));
@@ -334,7 +419,10 @@ app.get("/admin/dlq", async (c) => {
     `SELECT id, original_topic, original_partition, original_offset, original_key, reason, status, retry_count, created_at, updated_at FROM dlq_events WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
     [status, limit, offset],
   );
-  const count = await pool.query("SELECT count(*)::int AS total FROM dlq_events WHERE status = $1", [status]);
+  const count = await pool.query(
+    "SELECT count(*)::int AS total FROM dlq_events WHERE status = $1",
+    [status],
+  );
   return c.json({ total: count.rows[0].total, events: result.rows });
 });
 
@@ -362,7 +450,10 @@ app.post("/admin/dlq/:id/retry", async (c) => {
 app.post("/admin/dlq/:id/discard", async (c) => {
   const id = parseInt(c.req.param("id"), 10);
   if (isNaN(id)) return c.json({ error: "invalid id" }, 400);
-  const result = await pool.query("UPDATE dlq_events SET status = 'discarded', updated_at = NOW() WHERE id = $1 AND status = 'pending' RETURNING id", [id]);
+  const result = await pool.query(
+    "UPDATE dlq_events SET status = 'discarded', updated_at = NOW() WHERE id = $1 AND status = 'pending' RETURNING id",
+    [id],
+  );
   if (result.rowCount === 0) return c.json({ error: "not found or not pending" }, 404);
   return c.json({ ok: true, id });
 });
@@ -370,20 +461,35 @@ app.post("/admin/dlq/:id/discard", async (c) => {
 async function storeEnvelope(envelope: DLQEnvelope): Promise<number> {
   const result = await pool.query(
     `INSERT INTO dlq_events (original_topic, original_partition, original_offset, original_key, original_value, original_headers, reason) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-    [envelope.originalTopic, envelope.originalPartition, envelope.originalOffset, envelope.originalKey ?? null, envelope.originalValue ?? null, envelope.originalHeaders ?? null, envelope.reason],
+    [
+      envelope.originalTopic,
+      envelope.originalPartition,
+      envelope.originalOffset,
+      envelope.originalKey ?? null,
+      envelope.originalValue ?? null,
+      envelope.originalHeaders ?? null,
+      envelope.reason,
+    ],
   );
   return result.rows[0].id as number;
 }
 
 async function retryEvent(id: number): Promise<{ topic: string; status: string }> {
-  const result = await pool.query("SELECT * FROM dlq_events WHERE id = $1 AND status = 'pending' FOR UPDATE", [id]);
+  const result = await pool.query(
+    "SELECT * FROM dlq_events WHERE id = $1 AND status = 'pending' FOR UPDATE",
+    [id],
+  );
   if (result.rowCount === 0) {
-    const error = new Error(`DLQ event ${id} not found or not in pending state`) as Error & { statusCode: number };
+    const error = new Error(`DLQ event ${id} not found or not in pending state`) as Error & {
+      statusCode: number;
+    };
     error.statusCode = 404;
     throw error;
   }
   const row = result.rows[0];
-  await pool.query("UPDATE dlq_events SET status = 'retrying', updated_at = NOW() WHERE id = $1", [id]);
+  await pool.query("UPDATE dlq_events SET status = 'retrying', updated_at = NOW() WHERE id = $1", [
+    id,
+  ]);
   const span = startSpan("dlq.retry", { "dlq.id": id, "dlq.topic": row.original_topic });
   try {
     const headers: Record<string, string | Buffer> = {};
@@ -394,14 +500,28 @@ async function retryEvent(id: number): Promise<{ topic: string; status: string }
     }
     await producer.send({
       topic: row.original_topic,
-      messages: [{ key: row.original_key, value: row.original_value, headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, Buffer.from(v as string)])) }],
+      messages: [
+        {
+          key: row.original_key,
+          value: row.original_value,
+          headers: Object.fromEntries(
+            Object.entries(headers).map(([k, v]) => [k, Buffer.from(v as string)]),
+          ),
+        },
+      ],
     });
-    await pool.query("UPDATE dlq_events SET status = 'retried', retry_count = retry_count + 1, updated_at = NOW() WHERE id = $1", [id]);
+    await pool.query(
+      "UPDATE dlq_events SET status = 'retried', retry_count = retry_count + 1, updated_at = NOW() WHERE id = $1",
+      [id],
+    );
     retriesRequested.inc();
     logger.info({ id, topic: row.original_topic }, "DLQ event retried");
     return { topic: row.original_topic, status: "retried" };
   } catch (err) {
-    await pool.query("UPDATE dlq_events SET status = 'pending', last_error = $2, updated_at = NOW() WHERE id = $1", [id, err instanceof Error ? err.message : String(err)]);
+    await pool.query(
+      "UPDATE dlq_events SET status = 'pending', last_error = $2, updated_at = NOW() WHERE id = $1",
+      [id, err instanceof Error ? err.message : String(err)],
+    );
     retriesFailed.inc();
     throw err;
   } finally {
@@ -453,10 +573,20 @@ async function start() {
   await consumer.subscribe({ topic: TOPICS.DEAD_LETTER, fromBeginning: false });
   await consumer.run({
     autoCommit: false,
-    eachBatch: async ({ batch, resolveOffset, commitOffsetsIfNecessary, heartbeat, isRunning, isStale }) => {
+    eachBatch: async ({
+      batch,
+      resolveOffset,
+      commitOffsetsIfNecessary,
+      heartbeat,
+      isRunning,
+      isStale,
+    }) => {
       for (const message of batch.messages) {
         if (!isRunning() || isStale()) break;
-        if (!message.value) { resolveOffset(message.offset); continue; }
+        if (!message.value) {
+          resolveOffset(message.offset);
+          continue;
+        }
         inFlight++;
         try {
           const span = startSpan("dlq.persist", { "kafka.offset": message.offset });
@@ -465,7 +595,10 @@ async function start() {
             const envelope = DLQEnvelopeSchema.parse(raw);
             const id = await storeEnvelope(envelope);
             dlqEventsStored.inc();
-            logger.info({ id, originalTopic: envelope.originalTopic, reason: envelope.reason.slice(0, 200) }, "DLQ event stored");
+            logger.info(
+              { id, originalTopic: envelope.originalTopic, reason: envelope.reason.slice(0, 200) },
+              "DLQ event stored",
+            );
           } catch (err) {
             logger.error({ error: err, offset: message.offset }, "Failed to persist DLQ envelope");
           } finally {

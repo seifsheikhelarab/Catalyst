@@ -46,7 +46,9 @@ export function createLogger(options: LoggerOptions = {}) {
 
 export async function flushLogs(): Promise<void> {
   for (const logger of loggers) {
-    await new Promise<void>((resolve, reject) => logger.flush((err) => err ? reject(err) : resolve()));
+    await new Promise<void>((resolve, reject) =>
+      logger.flush((err) => (err ? reject(err) : resolve())),
+    );
   }
 }
 

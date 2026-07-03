@@ -1,4 +1,12 @@
-import { Counter, Gauge, Histogram, Registry, type CounterConfiguration, type GaugeConfiguration, type HistogramConfiguration } from "prom-client";
+import {
+  Counter,
+  Gauge,
+  Histogram,
+  Registry,
+  type CounterConfiguration,
+  type GaugeConfiguration,
+  type HistogramConfiguration,
+} from "prom-client";
 
 const registry = new Registry();
 
